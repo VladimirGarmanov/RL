@@ -1,0 +1,26 @@
+# Модели (тяжёлые, обучаются локально)
+models/
+**/models/
+
+# Claude Code
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Виртуальное окружение
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# macOS
+.DS_Store
