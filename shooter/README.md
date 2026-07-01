@@ -18,17 +18,17 @@
 # Установи зависимости (из корня репо)
 pip install -r requirements.txt
 
-# Сыграть против бота вручную
-python play.py --human
-
 # Обучение агента (self-play)
 python train.py
 
-# Посмотреть обученную модель
-python play.py
+# Посмотреть матч
+python play.py ai bot      # RL агент vs скриптовый бот (по умолчанию)
+python play.py human bot   # ты vs скриптовый бот
+python play.py human ai    # ты vs RL агент
+python play.py ai ai       # RL агент vs RL агент
 ```
 
-**Управление:**
+**Управление (human-режим):**
 - `ПРОБЕЛ` (удерживать) — двигаться вперёд
 - `ENTER` — выстрел
 - `ESC` — выход

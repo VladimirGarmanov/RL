@@ -18,9 +18,10 @@ python play_trained.py  # смотреть результат
 
 ```bash
 cd shooter
-python train.py       # обучение (self-play)
-python play.py        # смотреть модель
-python play.py --human  # сыграть самому
+python train.py            # обучение (self-play)
+python play.py ai bot      # смотреть модель
+python play.py human bot   # сыграть самому
+python play.py ai ai       # RL vs RL
 ```
 
 ## Установка

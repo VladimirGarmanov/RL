@@ -18,23 +18,27 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback
+from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.utils import set_random_seed
 
 from shooter_env import ShooterEnv
 
 _HERE           = os.path.dirname(os.path.abspath(__file__))
 MODEL_SAVE_PATH = os.path.join(_HERE, "models", "ppo_shooter_v2")
-TOTAL_TIMESTEPS      = 10_000_000  # нужно больше для self-play
-RESUME_TRAINING      = True        # продолжаем v2
-SELFPLAY_UPDATE_FREQ = 200_000     # каждые 200k шагов обновляем бота
-EXPLORATION_ENT_COEF = 0.05        # больше исследования: чаще пробует стрелять/двигаться
+TOTAL_TIMESTEPS      = 10_000_000
+RESUME_TRAINING      = True
+SELFPLAY_UPDATE_FREQ = 200_000
+EXPLORATION_ENT_COEF = 0.05
+N_ENVS               = 8           # параллельных сред (подбери под кол-во ядер CPU)
 
 
 PPO_PARAMS = {
     "n_steps":       2048,
-    "batch_size":    64,
+    "batch_size":    512,   # больше батч → GPU загружен
     "n_epochs":      10,
     "learning_rate": 2e-4,          # чуть меньше — уже есть база
     "gamma":         0.99,
@@ -87,23 +91,38 @@ class ProgressCallback(BaseCallback):
         return True
 
 
+def make_env(rank: int):
+    def _init():
+        env = ShooterEnv(render_mode=None)
+        env.reset(seed=rank)
+        return env
+    return _init
+
+
 def main():
     os.makedirs(os.path.join(_HERE, "models"), exist_ok=True)
 
-    env = ShooterEnv(render_mode=None)
-    check_env(env, warn=True)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Устройство: {device}")
+    if device == "cuda":
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+
+    # Проверка среды на одном экземпляре
+    check_env(ShooterEnv(render_mode=None), warn=True)
+
+    # N параллельных сред в отдельных процессах
+    vec_env = SubprocVecEnv([make_env(i) for i in range(N_ENVS)])
 
     model_file = MODEL_SAVE_PATH + ".zip"
     if RESUME_TRAINING and os.path.exists(model_file):
         print(f"Загружаем модель: {model_file}")
-        model = PPO.load(MODEL_SAVE_PATH, env=env)
+        model = PPO.load(MODEL_SAVE_PATH, env=vec_env, device=device)
         model.ent_coef = EXPLORATION_ENT_COEF
-        # Сразу даём боту начальный уровень из загруженной модели
-        env.update_bot_model(model)
-        print("Бот инициализирован копией загруженной модели.")
+        vec_env.env_method("update_bot_model", model)
+        print(f"Бот инициализирован. Параллельных сред: {N_ENVS}")
     else:
-        print("Обучение с нуля.")
-        model = PPO("MlpPolicy", env, **PPO_PARAMS)
+        print(f"Обучение с нуля. Параллельных сред: {N_ENVS}")
+        model = PPO("MlpPolicy", vec_env, device=device, **PPO_PARAMS)
 
     checkpoint_cb = CheckpointCallback(
         save_freq=100_000,
@@ -123,7 +142,7 @@ def main():
 
     model.save(MODEL_SAVE_PATH)
     print(f"Модель сохранена: {MODEL_SAVE_PATH}.zip")
-    env.close()
+    vec_env.close()
 
 
 if __name__ == "__main__":
