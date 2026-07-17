@@ -144,11 +144,11 @@ class CentipedeEnv(MujocoEnv, utils.EzPickle):
         height_cost_weight: float = 400.0,    # штраф за отклонение от номинальной высоты
         height_target: float = 0.095,         # номинальная высота шасси, м
         # --- плавность и бережём сервоприводы ---
-        torque_cost_weight: float = 0.02,     # штраф за момент на валах
-        action_rate_weight: float = 0.05,     # штраф за резкие изменения команд политики
+        torque_cost_weight: float = 0.05,     # было 0.02: поощряем эффективные движения
+        action_rate_weight: float = 0.20,     # было 0.05: СИЛЬНО штрафуем рывки (плавность!)
         action_filter_alpha: float = 0.3,     # НЧ-фильтр целевых углов серво (1.0 = выкл);
                                               # как рампа PWM на реальном контроллере
-        dof_vel_cost_weight: float = 1e-4,    # лёгкий штраф за размахивание суставами
+        dof_vel_cost_weight: float = 5e-4,    # было 1e-4: СИЛЬНО штрафуем размахивание суставами
         # --- завершение эпизода ---
         terminate_when_unhealthy: bool = True,
         healthy_z_range: tuple = (0.065, 0.20),
