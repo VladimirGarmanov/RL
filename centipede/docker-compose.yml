@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  train:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: centipede-train
+    volumes:
+      - ./models:/app/centipede/models
+      - ./train_docker.log:/tmp/train.log
+    environment:
+      - PYTHONUNBUFFERED=1
+    stdin_open: true
+    tty: true
+    # На слабом CPU может зависнуть на блокирующем I/O; даём память
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '2'
+          memory: 2G
