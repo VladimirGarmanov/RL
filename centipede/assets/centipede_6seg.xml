@@ -1,0 +1,275 @@
+<mujoco model="centipede-robot-6">
+  <compiler angle="degree"/>
+  <option timestep="0.005"/>
+
+  <default>
+    <joint armature="0.01" damping="0.03"/>
+    <geom condim="3" friction="1.0 0.1 0.01"/>
+    <position kp="12.0" kv="0.15" forcerange="-1.0 1.0" inheritrange="1.0"/>
+    <default class="leg">
+      <joint damping="0.05"/>
+    </default>
+    <default class="spine_yaw">
+      <joint damping="0.05"/>
+    </default>
+    <default class="spine_pitch">
+      <joint stiffness="5" damping="0.3"/>
+    </default>
+    <default class="visual">
+      <geom contype="0" conaffinity="0"/>
+    </default>
+    <default class="foot">
+      <geom friction="1.4 0.1 0.02"/>
+    </default>
+  </default>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.45 0.65 0.95" rgb2="0.10 0.15 0.30" width="256" height="256"/>
+    <texture name="grid_tex" type="2d" builtin="checker" rgb1="0.22 0.30 0.38" rgb2="0.30 0.40 0.48" width="512" height="512"/>
+    <material name="grid_mat" texture="grid_tex" texrepeat="24 24" reflectance="0.15"/>
+    <material name="table_mat" rgba="0.54 0.50 0.43 1" reflectance="0.08"/>
+    <hfield name="terrain" nrow="128" ncol="128" size="5.0 5.0 1.0 0.02"/>
+  </asset>
+
+  <worldbody>
+    <light directional="true" pos="0 0 8" dir="0 0 -1" diffuse="0.9 0.9 0.9" specular="0.2 0.2 0.2"/>
+    <geom name="terrain" type="hfield" hfield="terrain" material="grid_mat" friction="1.0 0.1 0.01"/>
+    <geom name="floor" type="plane" size="50 50 0.5" pos="0 0 -0.005" material="grid_mat" friction="1.0 0.1 0.01"/>
+    <geom name="tabletop" class="visual" type="box" pos="0 0 -0.014" size="4.5 3.0 0.012" material="table_mat"/>
+    <geom name="table_front_edge" class="visual" type="box" pos="0 -3.02 -0.012" size="4.55 0.035 0.035" rgba="0.24 0.22 0.20 1"/>
+    <geom name="table_back_edge" class="visual" type="box" pos="0 3.02 -0.012" size="4.55 0.035 0.035" rgba="0.24 0.22 0.20 1"/>
+    <geom name="table_left_edge" class="visual" type="box" pos="-4.52 0 -0.012" size="0.035 3.0 0.035" rgba="0.24 0.22 0.20 1"/>
+    <geom name="table_right_edge" class="visual" type="box" pos="4.52 0 -0.012" size="0.035 3.0 0.035" rgba="0.24 0.22 0.20 1"/>
+    <geom name="table_x_mark_0" class="visual" type="box" pos="-3.5 0 0.0015" size="0.008 2.8 0.0015" rgba="0.10 0.32 0.62 1"/>
+    <geom name="table_x_mark_1" class="visual" type="box" pos="-3 0 0.0015" size="0.008 2.8 0.0015" rgba="0.86 0.88 0.84 1"/>
+    <geom name="table_x_mark_2" class="visual" type="box" pos="-2.5 0 0.0015" size="0.008 2.8 0.0015" rgba="0.10 0.32 0.62 1"/>
+    <geom name="table_x_mark_3" class="visual" type="box" pos="-2 0 0.0015" size="0.008 2.8 0.0015" rgba="0.86 0.88 0.84 1"/>
+    <geom name="table_x_mark_4" class="visual" type="box" pos="-1.5 0 0.0015" size="0.008 2.8 0.0015" rgba="0.10 0.32 0.62 1"/>
+    <geom name="table_x_mark_5" class="visual" type="box" pos="-1 0 0.0015" size="0.008 2.8 0.0015" rgba="0.86 0.88 0.84 1"/>
+    <geom name="table_x_mark_6" class="visual" type="box" pos="-0.5 0 0.0015" size="0.008 2.8 0.0015" rgba="0.10 0.32 0.62 1"/>
+    <geom name="table_x_mark_7" class="visual" type="box" pos="0 0 0.0015" size="0.008 2.8 0.0015" rgba="0.95 0.45 0.10 1"/>
+    <geom name="table_x_mark_8" class="visual" type="box" pos="0.5 0 0.0015" size="0.008 2.8 0.0015" rgba="0.10 0.32 0.62 1"/>
+    <geom name="table_x_mark_9" class="visual" type="box" pos="1 0 0.0015" size="0.008 2.8 0.0015" rgba="0.86 0.88 0.84 1"/>
+    <geom name="table_x_mark_10" class="visual" type="box" pos="1.5 0 0.0015" size="0.008 2.8 0.0015" rgba="0.10 0.32 0.62 1"/>
+    <geom name="table_x_mark_11" class="visual" type="box" pos="2 0 0.0015" size="0.008 2.8 0.0015" rgba="0.86 0.88 0.84 1"/>
+    <geom name="table_x_mark_12" class="visual" type="box" pos="2.5 0 0.0015" size="0.008 2.8 0.0015" rgba="0.10 0.32 0.62 1"/>
+    <geom name="table_x_mark_13" class="visual" type="box" pos="3 0 0.0015" size="0.008 2.8 0.0015" rgba="0.86 0.88 0.84 1"/>
+    <geom name="table_x_mark_14" class="visual" type="box" pos="3.5 0 0.0015" size="0.008 2.8 0.0015" rgba="0.10 0.32 0.62 1"/>
+    <geom name="table_y_mark_0" class="visual" type="box" pos="0 -2 0.0017" size="4.0 0.010 0.0015" rgba="0.86 0.88 0.84 1"/>
+    <geom name="table_y_mark_1" class="visual" type="box" pos="0 -1 0.0017" size="4.0 0.010 0.0015" rgba="0.86 0.88 0.84 1"/>
+    <geom name="table_y_mark_2" class="visual" type="box" pos="0 1 0.0017" size="4.0 0.010 0.0015" rgba="0.86 0.88 0.84 1"/>
+    <geom name="table_y_mark_3" class="visual" type="box" pos="0 2 0.0017" size="4.0 0.010 0.0015" rgba="0.86 0.88 0.84 1"/>
+    <geom name="side_rib_left_0" type="box" pos="-3 1.55 0.003" size="0.16 0.025 0.003" rgba="0.36 0.33 0.29 1" friction="1.2 0.1 0.02"/>
+    <geom name="side_rib_right_0" type="box" pos="-3 -1.55 0.003" size="0.16 0.025 0.003" rgba="0.36 0.33 0.29 1" friction="1.2 0.1 0.02"/>
+    <geom name="side_rib_left_1" type="box" pos="-2 1.55 0.003" size="0.16 0.025 0.003" rgba="0.36 0.33 0.29 1" friction="1.2 0.1 0.02"/>
+    <geom name="side_rib_right_1" type="box" pos="-2 -1.55 0.003" size="0.16 0.025 0.003" rgba="0.36 0.33 0.29 1" friction="1.2 0.1 0.02"/>
+    <geom name="side_rib_left_2" type="box" pos="-1 1.55 0.003" size="0.16 0.025 0.003" rgba="0.36 0.33 0.29 1" friction="1.2 0.1 0.02"/>
+    <geom name="side_rib_right_2" type="box" pos="-1 -1.55 0.003" size="0.16 0.025 0.003" rgba="0.36 0.33 0.29 1" friction="1.2 0.1 0.02"/>
+    <geom name="side_rib_left_3" type="box" pos="1 1.55 0.003" size="0.16 0.025 0.003" rgba="0.36 0.33 0.29 1" friction="1.2 0.1 0.02"/>
+    <geom name="side_rib_right_3" type="box" pos="1 -1.55 0.003" size="0.16 0.025 0.003" rgba="0.36 0.33 0.29 1" friction="1.2 0.1 0.02"/>
+    <geom name="side_rib_left_4" type="box" pos="2 1.55 0.003" size="0.16 0.025 0.003" rgba="0.36 0.33 0.29 1" friction="1.2 0.1 0.02"/>
+    <geom name="side_rib_right_4" type="box" pos="2 -1.55 0.003" size="0.16 0.025 0.003" rgba="0.36 0.33 0.29 1" friction="1.2 0.1 0.02"/>
+    <geom name="side_rib_left_5" type="box" pos="3 1.55 0.003" size="0.16 0.025 0.003" rgba="0.36 0.33 0.29 1" friction="1.2 0.1 0.02"/>
+    <geom name="side_rib_right_5" type="box" pos="3 -1.55 0.003" size="0.16 0.025 0.003" rgba="0.36 0.33 0.29 1" friction="1.2 0.1 0.02"/>
+    
+        <body name="seg0" pos="0 0 0.1">
+          <freejoint name="root"/>
+          <geom name="seg0_chassis" type="box" size="0.055 0.042 0.016" rgba="0.30 0.32 0.36 1" mass="0.2"/>
+          <geom name="head_plate" class="visual" type="box" pos="0.025 0 0.02" size="0.025 0.03 0.004" rgba="0.95 0.50 0.10 1" mass="0.005"/>
+          <body name="seg0_left_hip_body" pos="0 0.052 0">
+            <joint name="seg0_left_hip" class="leg" axis="0 0 -1" range="-35 35"/>
+            <geom name="seg0_left_hip_servo" class="visual" type="box" size="0.0204 0.0099 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+            <geom name="seg0_left_femur" type="capsule" fromto="0 0 0 0 0.055 0" size="0.008" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+            <body name="seg0_left_knee_body" pos="0 0.055 0">
+              <joint name="seg0_left_knee" class="leg" axis="1 0 0" range="-45 45"/>
+              <geom name="seg0_left_knee_servo" class="visual" type="box" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+              <geom name="seg0_left_tibia" type="capsule" fromto="0 0 0 0 0.035 -0.085" size="0.006" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+              <geom name="seg0_left_foot" class="foot" type="sphere" pos="0 0.035 -0.085" size="0.011" rgba="0.05 0.05 0.05 1" mass="0.005"/>
+            </body>
+          </body>
+          <body name="seg0_right_hip_body" pos="0 -0.052 0">
+            <joint name="seg0_right_hip" class="leg" axis="0 0 1" range="-35 35"/>
+            <geom name="seg0_right_hip_servo" class="visual" type="box" size="0.0204 0.0099 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+            <geom name="seg0_right_femur" type="capsule" fromto="0 0 0 0 -0.055 0" size="0.008" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+            <body name="seg0_right_knee_body" pos="0 -0.055 0">
+              <joint name="seg0_right_knee" class="leg" axis="-1 0 0" range="-45 45"/>
+              <geom name="seg0_right_knee_servo" class="visual" type="box" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+              <geom name="seg0_right_tibia" type="capsule" fromto="0 0 0 0 -0.035 -0.085" size="0.006" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+              <geom name="seg0_right_foot" class="foot" type="sphere" pos="0 -0.035 -0.085" size="0.011" rgba="0.05 0.05 0.05 1" mass="0.005"/>
+            </body>
+          </body>
+        <body name="seg1" pos="-0.128 0 0">
+          <joint name="spine1_yaw" class="spine_yaw" pos="0.064 0 0" axis="0 0 1" range="-32 32"/>
+          <joint name="spine1_pitch" class="spine_pitch" pos="0.064 0 0" axis="0 1 0" range="-12 12"/>
+          <geom name="seg1_chassis" type="box" size="0.055 0.042 0.016" rgba="0.22 0.24 0.27 1" mass="0.2"/>
+          <geom name="spine1_servo" class="visual" type="box" pos="0.064 0 0.016" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+          <body name="seg1_left_hip_body" pos="0 0.052 0">
+            <joint name="seg1_left_hip" class="leg" axis="0 0 -1" range="-35 35"/>
+            <geom name="seg1_left_hip_servo" class="visual" type="box" size="0.0204 0.0099 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+            <geom name="seg1_left_femur" type="capsule" fromto="0 0 0 0 0.055 0" size="0.008" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+            <body name="seg1_left_knee_body" pos="0 0.055 0">
+              <joint name="seg1_left_knee" class="leg" axis="1 0 0" range="-45 45"/>
+              <geom name="seg1_left_knee_servo" class="visual" type="box" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+              <geom name="seg1_left_tibia" type="capsule" fromto="0 0 0 0 0.035 -0.085" size="0.006" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+              <geom name="seg1_left_foot" class="foot" type="sphere" pos="0 0.035 -0.085" size="0.011" rgba="0.05 0.05 0.05 1" mass="0.005"/>
+            </body>
+          </body>
+          <body name="seg1_right_hip_body" pos="0 -0.052 0">
+            <joint name="seg1_right_hip" class="leg" axis="0 0 1" range="-35 35"/>
+            <geom name="seg1_right_hip_servo" class="visual" type="box" size="0.0204 0.0099 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+            <geom name="seg1_right_femur" type="capsule" fromto="0 0 0 0 -0.055 0" size="0.008" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+            <body name="seg1_right_knee_body" pos="0 -0.055 0">
+              <joint name="seg1_right_knee" class="leg" axis="-1 0 0" range="-45 45"/>
+              <geom name="seg1_right_knee_servo" class="visual" type="box" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+              <geom name="seg1_right_tibia" type="capsule" fromto="0 0 0 0 -0.035 -0.085" size="0.006" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+              <geom name="seg1_right_foot" class="foot" type="sphere" pos="0 -0.035 -0.085" size="0.011" rgba="0.05 0.05 0.05 1" mass="0.005"/>
+            </body>
+          </body>
+        <body name="seg2" pos="-0.128 0 0">
+          <joint name="spine2_yaw" class="spine_yaw" pos="0.064 0 0" axis="0 0 1" range="-32 32"/>
+          <joint name="spine2_pitch" class="spine_pitch" pos="0.064 0 0" axis="0 1 0" range="-12 12"/>
+          <geom name="seg2_chassis" type="box" size="0.055 0.042 0.016" rgba="0.22 0.24 0.27 1" mass="0.2"/>
+          <geom name="spine2_servo" class="visual" type="box" pos="0.064 0 0.016" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+          <body name="seg2_left_hip_body" pos="0 0.052 0">
+            <joint name="seg2_left_hip" class="leg" axis="0 0 -1" range="-35 35"/>
+            <geom name="seg2_left_hip_servo" class="visual" type="box" size="0.0204 0.0099 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+            <geom name="seg2_left_femur" type="capsule" fromto="0 0 0 0 0.055 0" size="0.008" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+            <body name="seg2_left_knee_body" pos="0 0.055 0">
+              <joint name="seg2_left_knee" class="leg" axis="1 0 0" range="-45 45"/>
+              <geom name="seg2_left_knee_servo" class="visual" type="box" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+              <geom name="seg2_left_tibia" type="capsule" fromto="0 0 0 0 0.035 -0.085" size="0.006" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+              <geom name="seg2_left_foot" class="foot" type="sphere" pos="0 0.035 -0.085" size="0.011" rgba="0.05 0.05 0.05 1" mass="0.005"/>
+            </body>
+          </body>
+          <body name="seg2_right_hip_body" pos="0 -0.052 0">
+            <joint name="seg2_right_hip" class="leg" axis="0 0 1" range="-35 35"/>
+            <geom name="seg2_right_hip_servo" class="visual" type="box" size="0.0204 0.0099 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+            <geom name="seg2_right_femur" type="capsule" fromto="0 0 0 0 -0.055 0" size="0.008" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+            <body name="seg2_right_knee_body" pos="0 -0.055 0">
+              <joint name="seg2_right_knee" class="leg" axis="-1 0 0" range="-45 45"/>
+              <geom name="seg2_right_knee_servo" class="visual" type="box" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+              <geom name="seg2_right_tibia" type="capsule" fromto="0 0 0 0 -0.035 -0.085" size="0.006" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+              <geom name="seg2_right_foot" class="foot" type="sphere" pos="0 -0.035 -0.085" size="0.011" rgba="0.05 0.05 0.05 1" mass="0.005"/>
+            </body>
+          </body>
+        <body name="seg3" pos="-0.128 0 0">
+          <joint name="spine3_yaw" class="spine_yaw" pos="0.064 0 0" axis="0 0 1" range="-32 32"/>
+          <joint name="spine3_pitch" class="spine_pitch" pos="0.064 0 0" axis="0 1 0" range="-12 12"/>
+          <geom name="seg3_chassis" type="box" size="0.055 0.042 0.016" rgba="0.22 0.24 0.27 1" mass="0.2"/>
+          <geom name="spine3_servo" class="visual" type="box" pos="0.064 0 0.016" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+          <body name="seg3_left_hip_body" pos="0 0.052 0">
+            <joint name="seg3_left_hip" class="leg" axis="0 0 -1" range="-35 35"/>
+            <geom name="seg3_left_hip_servo" class="visual" type="box" size="0.0204 0.0099 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+            <geom name="seg3_left_femur" type="capsule" fromto="0 0 0 0 0.055 0" size="0.008" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+            <body name="seg3_left_knee_body" pos="0 0.055 0">
+              <joint name="seg3_left_knee" class="leg" axis="1 0 0" range="-45 45"/>
+              <geom name="seg3_left_knee_servo" class="visual" type="box" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+              <geom name="seg3_left_tibia" type="capsule" fromto="0 0 0 0 0.035 -0.085" size="0.006" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+              <geom name="seg3_left_foot" class="foot" type="sphere" pos="0 0.035 -0.085" size="0.011" rgba="0.05 0.05 0.05 1" mass="0.005"/>
+            </body>
+          </body>
+          <body name="seg3_right_hip_body" pos="0 -0.052 0">
+            <joint name="seg3_right_hip" class="leg" axis="0 0 1" range="-35 35"/>
+            <geom name="seg3_right_hip_servo" class="visual" type="box" size="0.0204 0.0099 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+            <geom name="seg3_right_femur" type="capsule" fromto="0 0 0 0 -0.055 0" size="0.008" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+            <body name="seg3_right_knee_body" pos="0 -0.055 0">
+              <joint name="seg3_right_knee" class="leg" axis="-1 0 0" range="-45 45"/>
+              <geom name="seg3_right_knee_servo" class="visual" type="box" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+              <geom name="seg3_right_tibia" type="capsule" fromto="0 0 0 0 -0.035 -0.085" size="0.006" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+              <geom name="seg3_right_foot" class="foot" type="sphere" pos="0 -0.035 -0.085" size="0.011" rgba="0.05 0.05 0.05 1" mass="0.005"/>
+            </body>
+          </body>
+        <body name="seg4" pos="-0.128 0 0">
+          <joint name="spine4_yaw" class="spine_yaw" pos="0.064 0 0" axis="0 0 1" range="-32 32"/>
+          <joint name="spine4_pitch" class="spine_pitch" pos="0.064 0 0" axis="0 1 0" range="-12 12"/>
+          <geom name="seg4_chassis" type="box" size="0.055 0.042 0.016" rgba="0.22 0.24 0.27 1" mass="0.2"/>
+          <geom name="spine4_servo" class="visual" type="box" pos="0.064 0 0.016" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+          <body name="seg4_left_hip_body" pos="0 0.052 0">
+            <joint name="seg4_left_hip" class="leg" axis="0 0 -1" range="-35 35"/>
+            <geom name="seg4_left_hip_servo" class="visual" type="box" size="0.0204 0.0099 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+            <geom name="seg4_left_femur" type="capsule" fromto="0 0 0 0 0.055 0" size="0.008" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+            <body name="seg4_left_knee_body" pos="0 0.055 0">
+              <joint name="seg4_left_knee" class="leg" axis="1 0 0" range="-45 45"/>
+              <geom name="seg4_left_knee_servo" class="visual" type="box" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+              <geom name="seg4_left_tibia" type="capsule" fromto="0 0 0 0 0.035 -0.085" size="0.006" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+              <geom name="seg4_left_foot" class="foot" type="sphere" pos="0 0.035 -0.085" size="0.011" rgba="0.05 0.05 0.05 1" mass="0.005"/>
+            </body>
+          </body>
+          <body name="seg4_right_hip_body" pos="0 -0.052 0">
+            <joint name="seg4_right_hip" class="leg" axis="0 0 1" range="-35 35"/>
+            <geom name="seg4_right_hip_servo" class="visual" type="box" size="0.0204 0.0099 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+            <geom name="seg4_right_femur" type="capsule" fromto="0 0 0 0 -0.055 0" size="0.008" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+            <body name="seg4_right_knee_body" pos="0 -0.055 0">
+              <joint name="seg4_right_knee" class="leg" axis="-1 0 0" range="-45 45"/>
+              <geom name="seg4_right_knee_servo" class="visual" type="box" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+              <geom name="seg4_right_tibia" type="capsule" fromto="0 0 0 0 -0.035 -0.085" size="0.006" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+              <geom name="seg4_right_foot" class="foot" type="sphere" pos="0 -0.035 -0.085" size="0.011" rgba="0.05 0.05 0.05 1" mass="0.005"/>
+            </body>
+          </body>
+        <body name="seg5" pos="-0.128 0 0">
+          <joint name="spine5_yaw" class="spine_yaw" pos="0.064 0 0" axis="0 0 1" range="-32 32"/>
+          <joint name="spine5_pitch" class="spine_pitch" pos="0.064 0 0" axis="0 1 0" range="-12 12"/>
+          <geom name="seg5_chassis" type="box" size="0.055 0.042 0.016" rgba="0.22 0.24 0.27 1" mass="0.2"/>
+          <geom name="spine5_servo" class="visual" type="box" pos="0.064 0 0.016" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+          <body name="seg5_left_hip_body" pos="0 0.052 0">
+            <joint name="seg5_left_hip" class="leg" axis="0 0 -1" range="-35 35"/>
+            <geom name="seg5_left_hip_servo" class="visual" type="box" size="0.0204 0.0099 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+            <geom name="seg5_left_femur" type="capsule" fromto="0 0 0 0 0.055 0" size="0.008" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+            <body name="seg5_left_knee_body" pos="0 0.055 0">
+              <joint name="seg5_left_knee" class="leg" axis="1 0 0" range="-45 45"/>
+              <geom name="seg5_left_knee_servo" class="visual" type="box" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+              <geom name="seg5_left_tibia" type="capsule" fromto="0 0 0 0 0.035 -0.085" size="0.006" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+              <geom name="seg5_left_foot" class="foot" type="sphere" pos="0 0.035 -0.085" size="0.011" rgba="0.05 0.05 0.05 1" mass="0.005"/>
+            </body>
+          </body>
+          <body name="seg5_right_hip_body" pos="0 -0.052 0">
+            <joint name="seg5_right_hip" class="leg" axis="0 0 1" range="-35 35"/>
+            <geom name="seg5_right_hip_servo" class="visual" type="box" size="0.0204 0.0099 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+            <geom name="seg5_right_femur" type="capsule" fromto="0 0 0 0 -0.055 0" size="0.008" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+            <body name="seg5_right_knee_body" pos="0 -0.055 0">
+              <joint name="seg5_right_knee" class="leg" axis="-1 0 0" range="-45 45"/>
+              <geom name="seg5_right_knee_servo" class="visual" type="box" size="0.0099 0.0204 0.0215" rgba="0.10 0.10 0.11 1" mass="0.055"/>
+              <geom name="seg5_right_tibia" type="capsule" fromto="0 0 0 0 -0.035 -0.085" size="0.006" rgba="0.72 0.74 0.78 1" mass="0.02"/>
+              <geom name="seg5_right_foot" class="foot" type="sphere" pos="0 -0.035 -0.085" size="0.011" rgba="0.05 0.05 0.05 1" mass="0.005"/>
+            </body>
+          </body>
+        </body>
+        </body>
+        </body>
+        </body>
+        </body>
+        </body>
+  </worldbody>
+
+  <actuator>
+    <position name="seg0_left_hip" joint="seg0_left_hip"/>
+    <position name="seg0_left_knee" joint="seg0_left_knee"/>
+    <position name="seg0_right_hip" joint="seg0_right_hip"/>
+    <position name="seg0_right_knee" joint="seg0_right_knee"/>
+    <position name="spine1_yaw" joint="spine1_yaw"/>
+    <position name="seg1_left_hip" joint="seg1_left_hip"/>
+    <position name="seg1_left_knee" joint="seg1_left_knee"/>
+    <position name="seg1_right_hip" joint="seg1_right_hip"/>
+    <position name="seg1_right_knee" joint="seg1_right_knee"/>
+    <position name="spine2_yaw" joint="spine2_yaw"/>
+    <position name="seg2_left_hip" joint="seg2_left_hip"/>
+    <position name="seg2_left_knee" joint="seg2_left_knee"/>
+    <position name="seg2_right_hip" joint="seg2_right_hip"/>
+    <position name="seg2_right_knee" joint="seg2_right_knee"/>
+    <position name="spine3_yaw" joint="spine3_yaw"/>
+    <position name="seg3_left_hip" joint="seg3_left_hip"/>
+    <position name="seg3_left_knee" joint="seg3_left_knee"/>
+    <position name="seg3_right_hip" joint="seg3_right_hip"/>
+    <position name="seg3_right_knee" joint="seg3_right_knee"/>
+    <position name="spine4_yaw" joint="spine4_yaw"/>
+    <position name="seg4_left_hip" joint="seg4_left_hip"/>
+    <position name="seg4_left_knee" joint="seg4_left_knee"/>
+    <position name="seg4_right_hip" joint="seg4_right_hip"/>
+    <position name="seg4_right_knee" joint="seg4_right_knee"/>
+    <position name="spine5_yaw" joint="spine5_yaw"/>
+    <position name="seg5_left_hip" joint="seg5_left_hip"/>
+    <position name="seg5_left_knee" joint="seg5_left_knee"/>
+    <position name="seg5_right_hip" joint="seg5_right_hip"/>
+    <position name="seg5_right_knee" joint="seg5_right_knee"/>
+  </actuator>
+</mujoco>
