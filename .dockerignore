@@ -1,0 +1,25 @@
+.git
+.claude
+.idea
+.vscode
+.venv
+venv
+env
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+
+# Local training artifacts are mounted at runtime instead of baked into the image.
+**/models
+**/models_backup*
+**/train.log
+
+# Large generated/temporary files.
+*.zip
+*.pkl
+*.pt
+*.pth
+*.npy
+*.npz

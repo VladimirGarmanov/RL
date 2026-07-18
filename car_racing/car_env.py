@@ -95,6 +95,29 @@ def _angle_diff(a1: float, a2: float) -> float:
 
 
 class CarRacingEnv(gym.Env):
+    """Среда gymnasium «гоночная машинка на случайных трассах».
+
+    Для тех, кто не знаком с RL: среда — это «игра» с формальным
+    интерфейсом. reset() начинает эпизод и возвращает наблюдение
+    (что «видит» агент), step(action) применяет действие и возвращает
+    (наблюдение, награду, конец эпизода, доп. инфо). Алгоритм обучения
+    (PPO в train.py) дёргает step миллионы раз и учится выбирать
+    действия, максимизирующие сумму наград.
+
+    Действия — 7 дискретных кнопок (spaces.Discrete(7)):
+      0 ничего, 1 газ, 2 газ+влево, 3 газ+вправо, 4 тормоз,
+      5 влево, 6 вправо.
+
+    Параметры конструктора:
+      render_mode        — "human" = окно pygame, None = без графики (обучение);
+      render_substeps    — на сколько под-шагов дробить физику при показе
+                           (плавная картинка без изменения физики);
+      track_variant      — зафиксировать номер трассы (None = случайная);
+      random_start_probability — доля эпизодов со стартом из случайной
+                           точки трассы (агент видит все секции, не только начало);
+      terminate_on_lap   — заканчивать эпизод после полного круга.
+    """
+
     metadata = {"render_modes": ["human"], "render_fps": FPS}
 
     def __init__(
@@ -161,6 +184,10 @@ class CarRacingEnv(gym.Env):
     # ------------------------------------------------------------------
 
     def reset(self, seed=None, options=None):
+        """Начинает новый эпизод: выбирает трассу, ставит машинку на старт.
+
+        Возвращает (первое наблюдение, пустой info) — стандарт gymnasium.
+        """
         super().reset(seed=seed)
 
         # Строим пул трасс один раз при первом reset()
@@ -231,6 +258,12 @@ class CarRacingEnv(gym.Env):
         return self._get_obs(), {}
 
     def step(self, action: int):
+        """Один шаг: применить действие -> физика -> сенсоры -> награда.
+
+        Возвращает кортеж gymnasium (obs, reward, terminated, truncated, info):
+        terminated — эпизод закончился «по игре» (вылет с трассы и т.п.),
+        truncated — просто вышло время (MAX_STEPS).
+        """
         self._step_count += 1
 
         dt = 1.0 / self._render_substeps
@@ -273,6 +306,7 @@ class CarRacingEnv(gym.Env):
                 self.close()
 
     def render(self):
+        """Полный кадр: трасса + машинка с лучами + HUD + мини-карта."""
         if self.render_mode != "human":
             return
         self._ensure_pygame()
@@ -289,6 +323,7 @@ class CarRacingEnv(gym.Env):
                 self.close()
 
     def close(self):
+        """Закрывает окно pygame (если было открыто)."""
         if self.screen is not None:
             pygame.quit()
             self.screen = None
@@ -771,6 +806,8 @@ class CarRacingEnv(gym.Env):
         pygame.draw.circle(self.screen, (255, 230, 0), (cp_mx, cp_my), 3)
 
     def _ensure_pygame(self):
+        """Ленивая инициализация pygame: окно создаётся при первом рендере,
+        а не в конструкторе — при обучении без графики оно не нужно вовсе."""
         if self.screen is None:
             pygame.init()
             pygame.display.set_caption("RL Car Racing — AI")

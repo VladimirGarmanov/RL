@@ -1,0 +1,14 @@
+{
+  "H_mm": 31.49,
+  "B_mm": 15.5,
+  "tf_mm": 1.61,
+  "tw_mm": 1.6,
+  "mass_g": 17.72,
+  "sigma_mpa": 16.66,
+  "deflection_mm": 0.601,
+  "safety_factor": 3.0,
+  "span_mm": 150.0,
+  "design_load_n": 400.0,
+  "sigma_allow_mpa": 16.67,
+  "deflection_limit_mm": 1.0
+}

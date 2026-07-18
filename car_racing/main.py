@@ -24,6 +24,11 @@ FPS = 60
 
 
 def get_action_from_keys(keys) -> int:
+    """Переводит зажатые клавиши в номер дискретного действия среды.
+
+    Кодировка та же, что видит RL-агент (см. car_env.py):
+    0 ничего, 1 газ, 2 газ+влево, 3 газ+вправо, 4 тормоз, 5 влево, 6 вправо.
+    """
     gas   = keys[pygame.K_UP]
     brake = keys[pygame.K_DOWN]
     left  = keys[pygame.K_LEFT]
@@ -39,6 +44,11 @@ def get_action_from_keys(keys) -> int:
 
 
 def main():
+    """Игровой цикл ручного режима: клавиши -> физика -> отрисовка, 60 FPS.
+
+    Использует ту же физику Car и ту же трассу Track, что и RL-агент, —
+    удобно самому почувствовать управление, прежде чем смотреть на агента.
+    """
     pygame.init()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     pygame.display.set_caption("RL Car Racing — Manual Mode")

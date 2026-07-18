@@ -124,12 +124,33 @@ _N_OBS = N_RAYS + 7 + 9 + 5 + 3   # 32
 
 
 def _angle_diff_deg(a: float, b: float) -> float:
-    """Signed shortest angular difference a-b in degrees."""
+    """Кратчайшая разница углов a-b со знаком, в градусах (диапазон [-180, 180])."""
     diff = (a - b + 180.0) % 360.0 - 180.0
     return diff
 
 
 class ShooterEnv(gym.Env):
+    """Среда gymnasium «дуэль два танчика на арене со стенами».
+
+    Для тех, кто не знаком с RL: среда — «игра» со стандартным интерфейсом
+    reset()/step(). Агент на каждом шаге получает наблюдение (32 числа:
+    лучи до стен, своё состояние, состояние противника, входящая пуля,
+    подсказка прицеливания), выбирает одно из 3 действий и получает
+    награду. Алгоритм PPO (train.py) учится максимизировать сумму наград.
+
+    Управление намеренно минималистичное (Discrete(3)):
+      0 = ничего (пушка крутится сама — режим SPIN),
+      1 = MOVE — ехать туда, куда сейчас смотрит пушка,
+      2 = SHOOT — выстрелить туда, куда смотрит пушка.
+    Вся тактика (когда повернуться, когда ехать, когда стрелять) —
+    из выбора МОМЕНТА нажатия, это и делает задачу интересной.
+
+    Self-play: противник (бот) начинает со скриптового поведения, а
+    по мере обучения ему периодически подкладывается копия текущей
+    политики агента (update_bot_model) — агент играет против себя
+    вчерашнего и не может выучить эксплойт против фиксированного бота.
+    """
+
     metadata = {"render_modes": ["human"], "render_fps": FPS}
 
     def __init__(self, render_mode=None):
@@ -165,6 +186,8 @@ class ShooterEnv(gym.Env):
     # ------------------------------------------------------------------
 
     def update_bot_model(self, model):
+        """Подкладывает боту копию текущей политики агента (self-play).
+        Вызывается SelfPlayCallback из train.py каждые N шагов обучения."""
         self._bot_ctrl.set_model(model)
 
     # ------------------------------------------------------------------
@@ -172,6 +195,8 @@ class ShooterEnv(gym.Env):
     # ------------------------------------------------------------------
 
     def reset(self, seed=None, options=None):
+        """Новый бой: агент и бот на противоположных углах карты,
+        случайные стартовые углы пушек, пустые списки пуль."""
         super().reset(seed=seed)
 
         self.world = World(map_idx=0)
@@ -199,6 +224,20 @@ class ShooterEnv(gym.Env):
         return self._get_obs(), {}
 
     def step(self, action: int):
+        """Один шаг боя (1/60 секунды).
+
+        Порядок внутри шага:
+          1. Запоминаем «до»: дистанции, линию огня, угрозу от пуль —
+             многие награды считаются как разница «до/после».
+          2. Двигаем агента по его действию, затем бота по его действию
+             (бот получает СВОЁ наблюдение — среда симметрична).
+          3. Начисляем шейпинг-награды (движение, тактика, качество выстрела).
+          4. Двигаем все пули, проверяем попадания в обе стороны.
+          5. Награды за уклонение, попадания, победу/поражение/таймаут.
+
+        Возвращает (obs, reward, terminated, truncated, info); в
+        info["reward_parts"] — разбивка награды по слагаемым для отладки.
+        """
         self._step_count += 1
         reward = STEP_PENALTY
         reward_parts = {"time": STEP_PENALTY}
@@ -387,6 +426,7 @@ class ShooterEnv(gym.Env):
         return self._get_obs(), reward, terminated, truncated, info
 
     def render(self):
+        """Рисует кадр: карта, оба игрока, все пули, HUD со здоровьем."""
         if self.render_mode != "human":
             return
         self._ensure_pygame()
@@ -405,6 +445,7 @@ class ShooterEnv(gym.Env):
         pygame.event.pump()
 
     def close(self):
+        """Закрывает окно pygame (если было открыто)."""
         if self.screen is not None:
             pygame.quit()
             self.screen = None
@@ -414,10 +455,22 @@ class ShooterEnv(gym.Env):
     # ------------------------------------------------------------------
 
     def _get_obs(self) -> np.ndarray:
+        """Наблюдение агента (обёртка над _get_obs_for)."""
         return self._get_obs_for(self.agent, self.bot, self.bot_bullets)
 
     def _get_obs_for(self, player, opponent, incoming_bullets=None) -> np.ndarray:
-        """Наблюдение с точки зрения player, где opponent — враг."""
+        """Наблюдение с точки зрения player, где opponent — враг.
+
+        Симметричность важна для self-play: одна и та же функция строит
+        наблюдение и для агента, и для бота (просто меняются местами
+        аргументы), поэтому политику агента можно без изменений
+        подставить боту.
+
+        Состав (32 числа, все нормированы в [-1, 1]):
+          8 лучей до стен + 7 о себе (курс, состояние, скорость, HP,
+          перезарядка) + 9 о противнике + 5 о самой опасной входящей
+          пуле + 3 подсказки прицеливания с упреждением.
+        """
         if incoming_bullets is None:
             incoming_bullets = []
 
@@ -475,10 +528,16 @@ class ShooterEnv(gym.Env):
     # ------------------------------------------------------------------
 
     def _distance_between(self, a, b) -> float:
+        """Евклидово расстояние между двумя игроками, px."""
         return math.hypot(a.x - b.x, a.y - b.y)
 
     def _combat_distance_error(self, player, opponent) -> float:
-        """0 inside useful combat band, grows when too close or too far."""
+        """Насколько дистанция до противника вне «полезной боевой полосы».
+
+        0, пока дистанция в пределах IDEAL_COMBAT_DIST +- COMBAT_BAND_WIDTH;
+        растёт, когда слишком близко (легко словить пулю) или слишком
+        далеко (не попасть самому). Используется в награде за движение.
+        """
         dist = self._distance_between(player, opponent)
         return max(0.0, abs(dist - IDEAL_COMBAT_DIST) - COMBAT_BAND_WIDTH)
 
@@ -494,6 +553,14 @@ class ShooterEnv(gym.Env):
     def _movement_reward(self, pre_dist_error: float,
                          move_dx: float, move_dy: float,
                          moved: bool) -> float:
+        """Награда за полезное движение (анти-кемпинг).
+
+        Слагаемые: небольшой плюс за само движение; плюс за приближение
+        к полезной боевой дистанции; плюс за стрейф (движение ПОПЕРЁК
+        линии огня — так сложнее попасть по агенту), но только когда
+        линия огня открыта; растущий штраф за стояние на месте дольше
+        STILL_GRACE_STEPS шагов.
+        """
         reward = 0.0
 
         if moved:
@@ -521,6 +588,13 @@ class ShooterEnv(gym.Env):
     def _tactical_position_reward(self, action: int, pre_dist: float,
                                   pre_los_clear: bool, pre_wall_risk: float,
                                   moved: bool) -> float:
+        """Награда за тактически грамотную позицию.
+
+        Штрафы: упёрся в стену (жал MOVE, но не сдвинулся), стоит
+        вплотную к стене, линия огня перекрыта. Бонусы: отошёл от стены,
+        держит открытую линию огня в боевой дальности (и особенно —
+        только что её открыл), сближается, когда слишком далеко.
+        """
         reward = 0.0
 
         post_dist = self._distance_between(self.agent, self.bot)
@@ -549,7 +623,19 @@ class ShooterEnv(gym.Env):
         return reward
 
     def _incoming_threat(self, player, bullets) -> dict:
-        """Most dangerous incoming bullet for player."""
+        """Находит самую опасную летящую в игрока пулю.
+
+        Для каждой пули аналитически считается точка её максимального
+        сближения с игроком (проекция на траекторию). Пуля опасна, если
+        сближение меньше DANGER_RADIUS, произойдёт в ближайшие
+        THREAT_HORIZON_STEPS шагов и по пути нет стены.
+
+        Возвращает словарь: risk (0..1 — насколько страшно), time
+        (шагов до сближения), bearing (направление на пулю),
+        escape_side (+-1 — в какую сторону уворачиваться), intersects
+        (True = траектория реально задевает корпус).
+        Эти же значения идут в наблюдения — агент «видит» угрозу.
+        """
         best = {
             "risk": 0.0,
             "time": THREAT_HORIZON_STEPS,
@@ -611,6 +697,13 @@ class ShooterEnv(gym.Env):
 
     def _dodge_reward(self, pre_threat: dict, post_threat: dict,
                       moved: bool, was_hit: bool) -> float:
+        """Награда за уклонение от входящей пули.
+
+        Сравнивает угрозу до и после шага: снизил риск движением — плюс,
+        полностью ушёл с траектории — бонус, дёрнулся бесполезно — мелкий
+        штраф, стоял столбом под пулей — штраф. Если уже попали (was_hit)
+        или угрозы не было — ничего не начисляется.
+        """
         if was_hit or pre_threat["risk"] <= 0.0:
             return 0.0
 
@@ -628,7 +721,17 @@ class ShooterEnv(gym.Env):
         return reward
 
     def _lead_solution(self, shooter, target) -> dict:
-        """Predicted intercept point for a bullet fired by shooter at target."""
+        """Точка упреждения: куда стрелять, чтобы пуля встретила движущуюся цель.
+
+        Классическая задача перехвата: пуля летит со скоростью BULLET_SPEED,
+        цель — со своей скоростью; решаем квадратное уравнение относительно
+        времени встречи t (коэффициенты a, b, c ниже) и берём наименьший
+        положительный корень. Если решения нет (цель быстрее пули «убегает») —
+        целимся в текущую позицию по времени прямого долёта.
+
+        Возвращает: координаты точки перехвата, время долёта, угол
+        выстрела и line_clear (нет ли стены на пути пули).
+        """
         rx = target.x - shooter.x
         ry = target.y - shooter.y
         vx = target.vx
@@ -669,6 +772,14 @@ class ShooterEnv(gym.Env):
         return {"x": px, "y": py, "time": t, "angle": angle, "line_clear": clear}
 
     def _shot_quality(self, shooter, target, bullet: Bullet | None = None) -> dict:
+        """Оценивает качество прицеливания (0..1) относительно точки упреждения.
+
+        quality = 1 — пушка (или уже выпущенная пуля, если передана)
+        смотрит точно в точку перехвата; линейно падает до 0 при ошибке
+        LEAD_FULL_ERROR_DEG градусов. Если линия огня перекрыта стеной,
+        качество режется в 4 раза. Используется и в награде за выстрел,
+        и как подсказка в наблюдениях.
+        """
         if not target.alive:
             return {"quality": 0.0, "angle_error": 0.0, "line_clear": False}
 
@@ -690,6 +801,11 @@ class ShooterEnv(gym.Env):
 
     def _line_clear(self, x1: float, y1: float, x2: float, y2: float,
                     step: float = 6.0) -> bool:
+        """Свободна ли прямая между двумя точками от стен.
+
+        Простейший рейкаст: идём по отрезку с шагом step пикселей и
+        проверяем каждую точку на попадание в стену.
+        """
         dist = math.hypot(x2 - x1, y2 - y1)
         if dist <= 1e-6:
             return True
@@ -707,6 +823,8 @@ class ShooterEnv(gym.Env):
     # ------------------------------------------------------------------
 
     def _draw_hud(self):
+        """HUD: панели здоровья обоих игроков + счётчики шагов/попаданий.
+        Подпись бота показывает, играет ли он уже RL-копией агента."""
         using_rl = self._bot_ctrl._model is not None
         bot_label = "БОТ (RL)" if using_rl else "БОТ"
         self._draw_hp_panel(10,             10, "АГЕНТ",    self.agent.hp, (60, 140, 255))
@@ -722,6 +840,7 @@ class ShooterEnv(gym.Env):
             self.screen.blit(surf, (SCREEN_W // 2 - 55, 10 + i * 20))
 
     def _draw_hp_panel(self, x, y, label, hp, color):
+        """Панель здоровья: подпись + ряд прямоугольников (закрашен = живое HP)."""
         surf = self.font.render(label, True, color)
         self.screen.blit(surf, (x, y))
         for i in range(MAX_HP):
@@ -730,6 +849,8 @@ class ShooterEnv(gym.Env):
             pygame.draw.rect(self.screen, (200, 200, 200), (x + i * 30, y + 20, 24, 12), 1)
 
     def _ensure_pygame(self):
+        """Ленивая инициализация pygame: окно создаётся при первом рендере
+        (при обучении без графики оно не нужно)."""
         if self.screen is None:
             pygame.init()
             pygame.display.set_caption("RL Shooter — Self-Play")

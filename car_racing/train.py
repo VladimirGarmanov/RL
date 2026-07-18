@@ -33,7 +33,11 @@ MODEL_SAVE_PATH = os.path.join(_HERE, "models", "ppo_car_racing")
 CHECKPOINT_FREQ = 25_000    # сохраняем промежуточные модели каждые N шагов
 RESUME_TRAINING = False      # True = дообучать MODEL_SAVE_PATH.zip, если файл существует
 
-# Гиперпараметры PPO (можно менять для улучшения обучения)
+# Гиперпараметры PPO (можно менять для улучшения обучения).
+# PPO (Proximal Policy Optimization) — стандартный алгоритм RL: пробует
+# действия, усиливает удачные, но обновляет политику осторожно
+# (clip_range ограничивает размер изменения за шаг), плюс вторая
+# сеть-критик оценивает состояния и снижает шум обучения.
 PPO_PARAMS = {
     "n_steps": 4096,        # шагов за один rollout (больше = стабильнее градиент)
     "batch_size": 128,      # размер мини-батча
@@ -84,6 +88,7 @@ class ProgressCallback(BaseCallback):
 
 
 def main():
+    """Полный цикл обучения: среда -> проверка -> модель -> learn -> сохранение."""
     print("=" * 60)
     print("RL Car Racing — PPO Training")
     print(f"Total timesteps: {TOTAL_TIMESTEPS:,}")

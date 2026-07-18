@@ -10,7 +10,7 @@ centipede_env.py — Gymnasium-окружение "Робот-многоножк
 задают стрелочки.
 
 Наблюдения: углы и скорости суставов (энкодеры серво), высота и ориентация
-            головы (IMU), предыдущая команда серво, текущая команда скорости —
+            головы (IMU), предыдущая команда серво, сырая и эффективная команды скорости —
             всё это будет доступно и на реальном роботе.
 Действия:   нормализованные целевые углы сервоприводов, [-1, 1] на весь ход
             каждого сустава. Ровно то, что потом поедет в PWM реального робота.
@@ -30,6 +30,10 @@ centipede_env.py — Gymnasium-окружение "Робот-многоножк
     + в командном режиме: слежение за твистом (v_x, w_z_eff, дрейф v_y=0)
     + шейпинг: проекция фактического твиста на командное направление
       (обрезана на величине команды — перегонять невыгодно)
+    + метахрональная походка: соседние пары ног образуют бегущую волну,
+      а левая и правая ноги одного сегмента работают в противофазе
+    + естественный цикл шага: каждая лапа проводит примерно половину цикла
+      в опоре; опорная лапа идёт назад, переносимая — вперёд
     + небольшой бонус "жив"; для команды стоп — только небольшой бонус за покой,
       а не полный максимум слежения за ходьбой
     - простой при ненулевой команде
@@ -37,6 +41,7 @@ centipede_env.py — Gymnasium-окружение "Робот-многоножк
     - наклон корпуса (все сегменты должны быть параллельны полу)
     - отклонение от номинальной высоты и явное падение
     - перекрёст соседних ног
+    - проскальзывание лап, которые сейчас опираются на поверхность
     - момент на валах серво (ток и нагрев)
     - резкое изменение команд политики и размахивание суставами
 Скорость и курс меряются по СРЕДНЕМУ курсу всех сегментов — голова виляет
@@ -67,12 +72,13 @@ from centipede_model import ensure_xml, FRAME_SKIP, CONTROL_DT, SERVO_TORQUE
 # Версия награды/наблюдений среды. Меняется при любой несовместимой правке
 # (train.py пишет её в meta.json, play.py отказывается запускать старые модели:
 # сеть, обученная в другой среде, ведёт робота вразнос и падает).
-REWARD_VERSION = 3
+REWARD_VERSION = 4
 
 # Пределы команд (общие для обучения и ручного управления в play.py)
 MAX_VX_FORWARD = 0.40   # м/с вперёд
 MAX_VX_BACKWARD = 0.25  # м/с назад
 MAX_WZ = 0.70           # рад/с поворот
+GAIT_PHASE_LAG = 2.0 * np.pi / 3.0  # метахрональная фаза соседних пар ног
 
 DEFAULT_CAMERA_CONFIG = {
     "trackbodyid": 1,     # камера следит за головой
@@ -85,6 +91,102 @@ DEFAULT_CAMERA_CONFIG = {
 def _wrap_angle(a: float) -> float:
     """Приводит угол к диапазону [-pi, pi]."""
     return float(np.arctan2(np.sin(a), np.cos(a)))
+
+
+def _smoothstep01(value):
+    """Плавно переводит значение из [0, 1] в [0, 1] с нулевыми краевыми наклонами."""
+    value = np.clip(value, 0.0, 1.0)
+    return value * value * (3.0 - 2.0 * value)
+
+
+def _metachronal_coordination_score(
+    hip_pos_norm: np.ndarray,
+    hip_vel_norm: np.ndarray,
+    phase_lag: float,
+) -> tuple[float, float]:
+    """Оценивает бегущую волну ног без привязки к абсолютной фазе.
+
+    ``hip_pos_norm`` и ``hip_vel_norm`` имеют форму ``(segments, 2)``, где
+    стороны идут как left/right. Скорость заранее делится на ожидаемую
+    угловую частоту походки, поэтому пара ``(q, qdot / omega)`` задаёт фазу
+    осциллятора. Максимум получают обе допустимые ориентации волны: реальные
+    многоножки меняют её направление с видом, скоростью и рельефом.
+
+    Возвращает ``(coordination, activity)``. Первый результат лежит в [-1, 1],
+    второй в [0, 1] и не позволяет неподвижной позе получить gait-бонус.
+    """
+    hip_pos_norm = np.asarray(hip_pos_norm, dtype=np.float64)
+    hip_vel_norm = np.asarray(hip_vel_norm, dtype=np.float64)
+    if hip_pos_norm.shape != hip_vel_norm.shape or hip_pos_norm.ndim != 2:
+        raise ValueError("Углы и скорости бёдер должны иметь одинаковую форму (segments, sides)")
+    if hip_pos_norm.shape[0] < 2 or hip_pos_norm.shape[1] != 2:
+        raise ValueError("Для метахрональной волны нужны >=2 сегмента и две стороны")
+
+    phases = np.arctan2(hip_pos_norm, hip_vel_norm)
+    ipsilateral_delta = np.diff(phases, axis=0)
+    wave_forward = float(np.mean(np.cos(ipsilateral_delta - phase_lag)))
+    wave_backward = float(np.mean(np.cos(ipsilateral_delta + phase_lag)))
+    ipsilateral = max(wave_forward, wave_backward)
+
+    # Ноги одной пары у настоящей многоножки чередуются примерно на pi.
+    contralateral = float(np.mean(np.cos(phases[:, 0] - phases[:, 1] - np.pi)))
+    coordination = float(np.clip(0.7 * ipsilateral + 0.3 * contralateral, -1.0, 1.0))
+
+    # Одной правильной статической раскладки недостаточно: каждая лапа должна
+    # описывать цикл заметной амплитуды. Усредняем per-leg, чтобы одна быстро
+    # дёргающаяся лапа не разблокировала reward всей многоножки.
+    # Gate зависит только от реального углового размаха, а не от qdot: иначе
+    # высокочастотная микродрожь могла бы притвориться большой амплитудой.
+    amplitude_gate = _smoothstep01((np.abs(hip_pos_norm) - 0.12) / (0.25 - 0.12))
+    velocity_gate = np.tanh(np.abs(hip_vel_norm) / 0.25)
+    activity = float(np.mean(amplitude_gate * velocity_gate))
+    return coordination, activity
+
+
+def _support_fraction_score(
+    support_ratio: float,
+    target: float,
+    sigma2: float,
+) -> float:
+    """Бонус за долю лап в опоре в текущей фазе пространственной волны."""
+    error2 = float((support_ratio - target) ** 2)
+    return float(np.exp(-error2 / sigma2))
+
+
+def _support_quality(
+    support_ratio: float,
+    minimum: float,
+    maximum: float,
+) -> tuple[float, float]:
+    """Возвращает плавный gate опоры и квадратичное нарушение допустимого окна."""
+    low_gate = _smoothstep01(support_ratio / max(minimum, 1e-6))
+    high_gate = _smoothstep01((1.0 - support_ratio) / max(1.0 - maximum, 1e-6))
+    gate = float(low_gate * high_gate)
+    low_violation = max(0.0, minimum - support_ratio) / max(minimum, 1e-6)
+    high_violation = max(0.0, support_ratio - maximum) / max(1.0 - maximum, 1e-6)
+    violation = float(low_violation ** 2 + high_violation ** 2)
+    return gate, violation
+
+
+def _stance_swing_score(
+    hip_vel_norm: np.ndarray,
+    foot_contacts: np.ndarray,
+    travel_direction: float,
+) -> float:
+    """Проверяет, совпадает ли контакт лапы с рабочей частью её цикла.
+
+    При ходе вперёд опорная лапа должна двигаться назад относительно корпуса,
+    а поднятая лапа переносится вперёд. Для заднего хода знаки меняются.
+    """
+    hip_vel_norm = np.asarray(hip_vel_norm, dtype=np.float64)
+    foot_contacts = np.asarray(foot_contacts, dtype=bool)
+    if hip_vel_norm.shape != foot_contacts.shape:
+        raise ValueError("Скорости бёдер и маска контактов должны иметь одинаковую форму")
+    direction = float(np.sign(travel_direction))
+    if direction == 0.0:
+        return 0.0
+    desired_sign = np.where(foot_contacts, -direction, direction)
+    return float(np.mean(np.tanh(desired_sign * hip_vel_norm / 0.20)))
 
 
 class CentipedeEnv(MujocoEnv, utils.EzPickle):
@@ -131,6 +233,20 @@ class CentipedeEnv(MujocoEnv, utils.EzPickle):
         heading_err_max: float = 0.6,         # анти-windup: цель не убегает дальше, рад
         leg_cross_cost_weight: float = 50.0,  # штраф за сближение соседних ног (перекрёст)
         leg_clearance: float = 0.06,          # мин. дистанция между соседними ступнями, м
+        # --- биомеханика походки многоножки ---
+        gait_coordination_weight: float = 1.5,  # бегущая волна + противофаза сторон
+        gait_phase_lag: float = GAIT_PHASE_LAG,  # фаза соседних пар (6-сегм. CPG)
+        gait_support_weight: float = 0.5,     # бонус за естественную долю опорных лап
+        gait_duty_factor: float = 0.5,        # целевая доля лап в опоре внутри волны
+        gait_duty_sigma2: float = 0.04,       # ширина бонуса вокруг duty factor
+        gait_support_cost_weight: float = 0.8,  # не ползти без лап или на всех лапах
+        gait_support_min: float = 0.25,       # минимум мгновенно опорных лап
+        gait_support_max: float = 0.75,       # максимум мгновенно опорных лап
+        stance_swing_reward_weight: float = 0.5,  # опора назад, перенос вперёд
+        foot_slip_cost_weight: float = 0.4,   # не скользить опорными лапами
+        foot_slip_speed: float = 0.08,        # допустимый масштаб скольжения, м/с
+        gait_phase_rate_min: float = 2.5,     # рад/с при малой команде (масштаб робота)
+        gait_phase_rate_range: float = 5.5,   # добавка рад/с на полной команде
         command_resample_steps: int = 180,    # менять команду каждые N шагов (3.6 с)
         auto_command_resample: bool = True,   # False в play.py: командой рулит человек
         command_profile: str = "all",         # "all" — вся палитра команд (универсал);
@@ -163,47 +279,60 @@ class CentipedeEnv(MujocoEnv, utils.EzPickle):
     ):
         utils.EzPickle.__init__(
             self,
-            n_segments,
-            reward_mode,
-            forward_target_speed,
-            forward_reward_weight,
-            forward_track_weight,
-            forward_track_sigma2,
-            lateral_cost_weight,
-            yaw_drift_cost_weight,
-            twist_tracking_weight,
-            twist_tracking_sigma2,
-            stop_tracking_weight,
-            stop_tracking_sigma2,
-            twist_shaping_weight,
-            twist_idle_cost_weight,
-            twist_meas_alpha,
-            yaw_err_weight,
-            heading_gain,
-            heading_err_max,
-            leg_cross_cost_weight,
-            leg_clearance,
-            action_filter_alpha,
-            dof_vel_cost_weight,
-            command_resample_steps,
-            auto_command_resample,
-            healthy_reward,
-            vert_vel_cost_weight,
-            angvel_cost_weight,
-            flatness_cost_weight,
-            height_cost_weight,
-            height_target,
-            torque_cost_weight,
-            action_rate_weight,
-            terminate_when_unhealthy,
-            healthy_z_range,
-            min_upright,
-            fall_cost,
-            reset_noise_scale,
-            terrain_roughness,
-            terrain_seed,
-            render_mode,
+            n_segments=n_segments,
+            reward_mode=reward_mode,
+            forward_target_speed=forward_target_speed,
+            forward_reward_weight=forward_reward_weight,
+            forward_track_weight=forward_track_weight,
+            forward_track_sigma2=forward_track_sigma2,
+            lateral_cost_weight=lateral_cost_weight,
+            yaw_drift_cost_weight=yaw_drift_cost_weight,
+            twist_tracking_weight=twist_tracking_weight,
+            twist_tracking_sigma2=twist_tracking_sigma2,
+            stop_tracking_weight=stop_tracking_weight,
+            stop_tracking_sigma2=stop_tracking_sigma2,
+            twist_shaping_weight=twist_shaping_weight,
+            twist_idle_cost_weight=twist_idle_cost_weight,
+            twist_meas_alpha=twist_meas_alpha,
+            yaw_err_weight=yaw_err_weight,
+            heading_gain=heading_gain,
+            heading_err_max=heading_err_max,
+            leg_cross_cost_weight=leg_cross_cost_weight,
+            leg_clearance=leg_clearance,
+            gait_coordination_weight=gait_coordination_weight,
+            gait_phase_lag=gait_phase_lag,
+            gait_support_weight=gait_support_weight,
+            gait_duty_factor=gait_duty_factor,
+            gait_duty_sigma2=gait_duty_sigma2,
+            gait_support_cost_weight=gait_support_cost_weight,
+            gait_support_min=gait_support_min,
+            gait_support_max=gait_support_max,
+            stance_swing_reward_weight=stance_swing_reward_weight,
+            foot_slip_cost_weight=foot_slip_cost_weight,
+            foot_slip_speed=foot_slip_speed,
+            gait_phase_rate_min=gait_phase_rate_min,
+            gait_phase_rate_range=gait_phase_rate_range,
+            command_resample_steps=command_resample_steps,
+            auto_command_resample=auto_command_resample,
             command_profile=command_profile,
+            healthy_reward=healthy_reward,
+            vert_vel_cost_weight=vert_vel_cost_weight,
+            angvel_cost_weight=angvel_cost_weight,
+            flatness_cost_weight=flatness_cost_weight,
+            height_cost_weight=height_cost_weight,
+            height_target=height_target,
+            torque_cost_weight=torque_cost_weight,
+            action_rate_weight=action_rate_weight,
+            action_filter_alpha=action_filter_alpha,
+            dof_vel_cost_weight=dof_vel_cost_weight,
+            terminate_when_unhealthy=terminate_when_unhealthy,
+            healthy_z_range=healthy_z_range,
+            min_upright=min_upright,
+            fall_cost=fall_cost,
+            reset_noise_scale=reset_noise_scale,
+            terrain_roughness=terrain_roughness,
+            terrain_seed=terrain_seed,
+            render_mode=render_mode,
             **kwargs,
         )
         self.n_segments = n_segments
@@ -228,6 +357,29 @@ class CentipedeEnv(MujocoEnv, utils.EzPickle):
         self._heading_err_max = heading_err_max
         self._leg_cross_cost_weight = leg_cross_cost_weight
         self._leg_clearance = leg_clearance
+        self._gait_coordination_weight = gait_coordination_weight
+        self._gait_phase_lag = gait_phase_lag
+        self._gait_support_weight = gait_support_weight
+        self._gait_duty_factor = gait_duty_factor
+        self._gait_duty_sigma2 = gait_duty_sigma2
+        self._gait_support_cost_weight = gait_support_cost_weight
+        self._gait_support_min = gait_support_min
+        self._gait_support_max = gait_support_max
+        self._stance_swing_reward_weight = stance_swing_reward_weight
+        self._foot_slip_cost_weight = foot_slip_cost_weight
+        self._foot_slip_speed = foot_slip_speed
+        self._gait_phase_rate_min = gait_phase_rate_min
+        self._gait_phase_rate_range = gait_phase_rate_range
+        if not 0.0 <= gait_duty_factor <= 1.0:
+            raise ValueError("gait_duty_factor должен лежать в [0, 1]")
+        if gait_duty_sigma2 <= 0.0:
+            raise ValueError("gait_duty_sigma2 должен быть положительным")
+        if not 0.0 < gait_support_min < gait_support_max < 1.0:
+            raise ValueError("Нужно 0 < gait_support_min < gait_support_max < 1")
+        if gait_phase_rate_min <= 0.0 or gait_phase_rate_range < 0.0:
+            raise ValueError("Частота походки должна быть положительной")
+        if foot_slip_speed <= 0.0:
+            raise ValueError("foot_slip_speed должен быть положительным")
         self._action_filter_alpha = action_filter_alpha
         self._dof_vel_cost_weight = dof_vel_cost_weight
         self._command_resample_steps = command_resample_steps
@@ -253,8 +405,8 @@ class CentipedeEnv(MujocoEnv, utils.EzPickle):
 
         # Предзагрузка модели, чтобы узнать размерности
         m = mujoco.MjModel.from_xml_path(xml_path)
-        # qpos без глобальных x,y + скорости + предыдущая команда серво + команда скорости
-        obs_dim = (m.nq - 2) + m.nv + m.nu + 2
+        # qpos без x,y + скорости + предыдущая команда серво + (v, raw_w, effective_w)
+        obs_dim = (m.nq - 2) + m.nv + m.nu + 3
         observation_space = Box(low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float64)
 
         MujocoEnv.__init__(
@@ -283,6 +435,38 @@ class CentipedeEnv(MujocoEnv, utils.EzPickle):
             mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f"seg{i}_right_foot")
             for i in range(n_segments)
         ])
+        # Единая раскладка (segment, side), side: 0=left, 1=right. Она нужна,
+        # чтобы сопоставлять контакт каждой лапы с фазой именно её бедра.
+        self._foot_gids = np.column_stack((self._left_foot_gids, self._right_foot_gids))
+        self._foot_gid_to_index = {
+            int(gid): (segment, side)
+            for segment, row in enumerate(self._foot_gids)
+            for side, gid in enumerate(row)
+        }
+        # Любая контактная геометрия мира: плоскость, heightfield или препятствие.
+        self._substrate_gids = frozenset(
+            int(gid) for gid in np.flatnonzero(self.model.geom_bodyid == 0)
+        )
+
+        # Адреса hip-суставов в qpos/qvel. Reward читает фактическую кинематику,
+        # а не сырой action, поэтому серво не может получить gait-бонус одним
+        # красивым PWM-сигналом, если лапа физически за ним не успевает.
+        self._hip_qpos_adrs = np.empty((n_segments, 2), dtype=np.int32)
+        self._hip_dof_adrs = np.empty((n_segments, 2), dtype=np.int32)
+        self._hip_centers = np.empty((n_segments, 2), dtype=np.float64)
+        self._hip_half_ranges = np.empty((n_segments, 2), dtype=np.float64)
+        for segment in range(n_segments):
+            for side, side_name in enumerate(("left", "right")):
+                joint_id = mujoco.mj_name2id(
+                    self.model,
+                    mujoco.mjtObj.mjOBJ_JOINT,
+                    f"seg{segment}_{side_name}_hip",
+                )
+                self._hip_qpos_adrs[segment, side] = self.model.jnt_qposadr[joint_id]
+                self._hip_dof_adrs[segment, side] = self.model.jnt_dofadr[joint_id]
+                low, high = self.model.jnt_range[joint_id]
+                self._hip_centers[segment, side] = 0.5 * (low + high)
+                self._hip_half_ranges[segment, side] = max(0.5 * (high - low), 1e-6)
 
         # Случайный рельеф пола (свой в каждом процессе, если seed не задан)
         self._fill_terrain(terrain_roughness, terrain_seed)
@@ -416,6 +600,24 @@ class CentipedeEnv(MujocoEnv, utils.EzPickle):
         # Ось X сегмента в мировых координатах: (R00, R10) = (xmat[:,0], xmat[:,3])
         return float(np.arctan2(np.sum(xmat[:, 3]), np.sum(xmat[:, 0])))
 
+    def _foot_contact_mask(self) -> np.ndarray:
+        """Возвращает маску опорных лап формы ``(segments, 2)``.
+
+        Засчитываются только контакты лапы с геометрией мира. Касание другой
+        лапы или корпуса опорой не считается и не может обмануть duty reward.
+        """
+        contacts = np.zeros((self.n_segments, 2), dtype=bool)
+        for contact_id in range(self.data.ncon):
+            contact = self.data.contact[contact_id]
+            geom1, geom2 = int(contact.geom1), int(contact.geom2)
+            foot_index = self._foot_gid_to_index.get(geom1)
+            if foot_index is not None and geom2 in self._substrate_gids:
+                contacts[foot_index] = True
+            foot_index = self._foot_gid_to_index.get(geom2)
+            if foot_index is not None and geom1 in self._substrate_gids:
+                contacts[foot_index] = True
+        return contacts
+
     @staticmethod
     def _norm_v(v: float) -> float:
         """Нормирует линейную скорость на её предел (вперёд и назад пределы разные)."""
@@ -451,6 +653,7 @@ class CentipedeEnv(MujocoEnv, utils.EzPickle):
                в info — разбивка награды по всем слагаемым для отладки.
         """
         action = np.clip(np.asarray(action, dtype=np.float64), -1.0, 1.0)
+        command_used = self._command.copy()
         # НЧ-фильтр (EMA): резкие скачки политики не доходят до серво —
         # на реальном роботе то же самое делает рампа PWM в контроллере
         alpha = self._action_filter_alpha
@@ -458,9 +661,12 @@ class CentipedeEnv(MujocoEnv, utils.EzPickle):
         servo_targets = self._ctrl_center + self._filtered_action * self._ctrl_half
 
         com_before = self.data.subtree_com[self._head_id].copy()
+        feet_before = self.data.geom_xpos[self._foot_gids.ravel()].copy()
+        foot_contacts_before = self._foot_contact_mask()
         yaw_before = self._heading()
         self.do_simulation(servo_targets, self.frame_skip)
         com_after = self.data.subtree_com[self._head_id].copy()
+        feet_after = self.data.geom_xpos[self._foot_gids.ravel()].copy()
         yaw_after = self._heading()
 
         # Скорости в системе робота (как их видел бы бортовой IMU + одометрия)
@@ -492,6 +698,7 @@ class CentipedeEnv(MujocoEnv, utils.EzPickle):
         if self._reward_mode == "forward":
             w_cmd_eff = 0.0
         self._cmd_w_eff = w_cmd_eff
+        target_yaw_used = self._target_yaw
 
         reward_forward = 0.0
         reward_speed_track = 0.0
@@ -555,9 +762,121 @@ class CentipedeEnv(MujocoEnv, utils.EzPickle):
                     np.exp(-stop_err2 / self._stop_tracking_sigma2)
                 )
 
+        # --- Биологически правдоподобный цикл шага ---
+        # Reward не задаёт абсолютную фазу (скрытого таймера нет): сеть сама
+        # выбирает момент шага, но относительные фазы должны образовать волну.
+        if self._reward_mode == "forward":
+            gait_drive = 1.0
+            gait_frequency_drive = float(np.clip(
+                self._forward_target_speed / MAX_VX_FORWARD, 0.0, 1.0
+            ))
+            linear_gait_drive = 1.0
+            travel_direction = 1.0
+        else:
+            command_v_norm = self._norm_v(float(command_used[0]))
+            # Политика видит и сырую, и эффективную w; bio-reward следует
+            # внешней команде, а накопленную ошибку курса исправляет twist-term.
+            command_w_norm = float(command_used[1] / MAX_WZ)
+            gait_drive = float(np.clip(
+                max(abs(command_v_norm), abs(command_w_norm)), 0.0, 1.0
+            ))
+            gait_frequency_drive = gait_drive
+            linear_gait_drive = float(np.clip(abs(command_v_norm), 0.0, 1.0))
+            travel_direction = float(np.sign(command_v_norm))
+
+        # Красиво шагать на месте недостаточно. Небольшие 15% bio-сигнала
+        # помогают открыть походку в начале обучения, полный бонус появляется
+        # только после достижения хотя бы 35% требуемого движения.
+        if self._reward_mode == "forward":
+            gait_progress = float(np.clip(
+                v_x_f / max(0.35 * self._forward_target_speed, 1e-6), 0.0, 1.0
+            ))
+        elif gait_drive > 0.05:
+            gait_target = np.array([command_v_norm, command_w_norm])
+            gait_actual = np.array([self._norm_v(v_x_f), w_z_f / MAX_WZ])
+            target_norm = float(np.linalg.norm(gait_target))
+            along_target = float(np.dot(gait_target, gait_actual)) / max(target_norm, 1e-6)
+            gait_progress = float(np.clip(
+                along_target / max(0.35 * target_norm, 1e-6), 0.0, 1.0
+            ))
+        else:
+            gait_progress = 0.0
+        gait_motion_gate = gait_drive * (0.15 + 0.85 * gait_progress)
+
+        gait_omega = self._gait_phase_rate_min + self._gait_phase_rate_range * gait_frequency_drive
+        hip_pos_norm = (
+            self.data.qpos[self._hip_qpos_adrs] - self._hip_centers
+        ) / self._hip_half_ranges
+        hip_vel_norm = self.data.qvel[self._hip_dof_adrs] / (
+            self._hip_half_ranges * gait_omega
+        )
+        gait_coordination, gait_activity = _metachronal_coordination_score(
+            hip_pos_norm, hip_vel_norm, self._gait_phase_lag
+        )
+        gait_coordination_reward = (
+            self._gait_coordination_weight
+            * gait_motion_gate
+            * linear_gait_drive
+            * gait_activity
+            * gait_coordination
+        )
+
+        foot_contacts = self._foot_contact_mask()
+        support_ratio = float(np.mean(foot_contacts))
+        support_score = _support_fraction_score(
+            support_ratio,
+            self._gait_duty_factor,
+            self._gait_duty_sigma2,
+        )
+        support_gate, support_violation = _support_quality(
+            support_ratio,
+            self._gait_support_min,
+            self._gait_support_max,
+        )
+        gait_coordination_reward *= support_gate
+        gait_support_reward = (
+            self._gait_support_weight * gait_motion_gate * support_gate * support_score
+        )
+        gait_support_cost = (
+            self._gait_support_cost_weight * gait_motion_gate * support_violation
+        )
+
+        stance_swing_score = _stance_swing_score(
+            hip_vel_norm, foot_contacts, travel_direction
+        )
+        stance_swing_reward = (
+            self._stance_swing_reward_weight
+            * min(linear_gait_drive, gait_motion_gate)
+            * support_gate
+            * stance_swing_score
+        )
+
+        # В рабочей фазе стопа почти неподвижна в мире. Скольжение считается по
+        # фактическому перемещению geom, поэтому штраф ловит и drag, и "лыжную"
+        # эксплуатацию трения без нормального отрыва лапы.
+        foot_vel_xy = (feet_after[:, :2] - feet_before[:, :2]) / self.dt
+        foot_speed = np.linalg.norm(foot_vel_xy, axis=1).reshape(self.n_segments, 2)
+        stable_contacts = foot_contacts_before & foot_contacts
+        if np.any(stable_contacts):
+            stance_slip = foot_speed[stable_contacts]
+            mean_stance_slip = float(np.mean(stance_slip))
+            slip_norm2 = np.square(stance_slip / self._foot_slip_speed)
+            foot_slip_cost = self._foot_slip_cost_weight * float(
+                np.mean(np.clip(slip_norm2, 0.0, 4.0))
+            )
+        else:
+            mean_stance_slip = 0.0
+            foot_slip_cost = 0.0
+
         # --- Стабильность ---
         healthy = self.is_healthy
         terminated = self._terminate_when_unhealthy and not healthy
+        if not healthy:
+            # Падение не должно приносить положительную bio-награду из-за
+            # случайной раскладки фаз или большого числа касающихся пола лап.
+            gait_coordination_reward = min(gait_coordination_reward, 0.0)
+            gait_support_reward = 0.0
+            stance_swing_reward = min(stance_swing_reward, 0.0)
         fall_cost = self._fall_cost if terminated else 0.0
         healthy_reward = self._healthy_reward if healthy else 0.0
         vert_vel_cost = self._vert_vel_cost_weight * v_z ** 2
@@ -591,16 +910,20 @@ class CentipedeEnv(MujocoEnv, utils.EzPickle):
 
         if self._reward_mode == "forward":
             reward = (
-                reward_forward + reward_speed_track + healthy_reward
+                reward_forward + reward_speed_track + gait_coordination_reward
+                + gait_support_reward + stance_swing_reward + healthy_reward
                 - lateral_cost - yaw_drift_cost - vert_vel_cost - angvel_cost
                 - flatness_cost - height_cost - leg_cross_cost - torque_cost
+                - gait_support_cost - foot_slip_cost
                 - action_rate_cost - dof_vel_cost - fall_cost
             )
         else:
             reward = (
-                twist_tracking + twist_shaping + healthy_reward
+                twist_tracking + twist_shaping + gait_coordination_reward
+                + gait_support_reward + stance_swing_reward + healthy_reward
                 - twist_idle_cost - vert_vel_cost - angvel_cost - flatness_cost - height_cost
-                - leg_cross_cost - torque_cost - action_rate_cost - dof_vel_cost - fall_cost
+                - leg_cross_cost - gait_support_cost - foot_slip_cost - torque_cost
+                - action_rate_cost - dof_vel_cost - fall_cost
             )
 
         self._last_action = action
@@ -630,16 +953,27 @@ class CentipedeEnv(MujocoEnv, utils.EzPickle):
             "w_z": w_z_f,
             "v_x_raw": v_x_local,
             "w_z_raw": w_z,
-            "cmd_v_x": self._command[0],
-            "cmd_w_z": self._command[1],
+            "cmd_v_x": command_used[0],
+            "cmd_w_z": command_used[1],
             "cmd_w_z_eff": w_cmd_eff,
             "heading_err": heading_err,
-            "target_yaw": self._target_yaw,
+            "target_yaw": target_yaw_used,
             "reward_twist_tracking": twist_tracking,
             "reward_twist_shaping": twist_shaping,
             "reward_forward": reward_forward,
             "reward_speed_track": reward_speed_track,
+            "reward_gait_coordination": gait_coordination_reward,
+            "reward_gait_support": gait_support_reward,
+            "reward_stance_swing": stance_swing_reward,
             "reward_survive": healthy_reward,
+            "gait_coordination": gait_coordination,
+            "gait_activity": gait_activity,
+            "gait_motion_gate": gait_motion_gate,
+            "support_ratio": support_ratio,
+            "support_fraction_score": support_score,
+            "support_gate": support_gate,
+            "stance_swing_score": stance_swing_score,
+            "mean_stance_slip": mean_stance_slip,
             "cost_twist_idle": -twist_idle_cost,
             "cost_lateral": -lateral_cost,
             "cost_yaw_drift": -yaw_drift_cost,
@@ -648,6 +982,8 @@ class CentipedeEnv(MujocoEnv, utils.EzPickle):
             "cost_flatness": -flatness_cost,
             "cost_height": -height_cost,
             "cost_leg_cross": -leg_cross_cost,
+            "cost_gait_support": -gait_support_cost,
+            "cost_foot_slip": -foot_slip_cost,
             "cost_torque": -torque_cost,
             "cost_action_rate": -action_rate_cost,
             "cost_dof_vel": -dof_vel_cost,
@@ -670,9 +1006,10 @@ class CentipedeEnv(MujocoEnv, utils.EzPickle):
         position = self.data.qpos.flat[2:]  # без глобальных x, y
         velocity = self.data.qvel.flat[:]
         # В наблюдения идёт СГЛАЖЕННАЯ команда серво — реальное состояние PWM.
-        # Вместо сырой w — эффективная команда из ошибки курса: она уже
-        # содержит "сколько осталось довернуть", политике не нужно помнить угол
-        command_obs = np.array([self._command[0], self._cmd_w_eff])
+        # Сырая w сообщает намерение оператора, эффективная w — сколько осталось
+        # довернуть по накопленной ошибке курса. Обе нужны, чтобы reward не имел
+        # скрытой цели и одинаковые observations не означали разные команды.
+        command_obs = np.array([self._command[0], self._command[1], self._cmd_w_eff])
         return np.concatenate((position, velocity, self._filtered_action, command_obs))
 
     def reset_model(self):

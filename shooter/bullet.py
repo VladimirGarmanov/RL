@@ -12,8 +12,14 @@ MAX_LIFETIME  = 140
 
 
 class Bullet:
+    """Пуля: летит по прямой с постоянной скоростью, умирает о стену
+    или по истечении MAX_LIFETIME кадров. Хранит короткий след для
+    отрисовки светящегося хвоста."""
+
     def __init__(self, x: float, y: float, angle: float,
                  trail_color: tuple = (255, 140, 0)):
+        """Создаёт пулю в точке (x, y), летящую под углом angle (градусы).
+        trail_color — цвет хвоста (у агента и бота разные)."""
         rad      = math.radians(angle)
         self.x   = x
         self.y   = y
@@ -25,6 +31,9 @@ class Bullet:
         self._trail_color = trail_color
 
     def update(self, world) -> bool:
+        """Один тик полёта: сдвиг на вектор скорости, обновление следа,
+        проверка стены и времени жизни. Возвращает True, если пуля
+        именно на этом тике перестала существовать."""
         if not self.alive:
             return False
         self._trail.append((self.x, self.y))
@@ -39,9 +48,12 @@ class Bullet:
         return False
 
     def hits(self, cx: float, cy: float, radius: float) -> bool:
+        """Попала ли пуля в круг (cx, cy, radius) — простая проверка
+        пересечения двух окружностей."""
         return math.hypot(self.x - cx, self.y - cy) < radius + BULLET_RADIUS
 
     def draw(self, screen: pygame.Surface, cam_x: float = 0, cam_y: float = 0):
+        """Рисует хвост (растущие и разгорающиеся круги по следу) и ядро пули."""
         if not self.alive:
             return
 

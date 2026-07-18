@@ -253,6 +253,17 @@ class Track:
     """
 
     def __init__(self, waypoints=None, road_width=None, figure8=False):
+        """Строит трассу.
+
+        waypoints  — контрольные точки контура (None = встроенная F1-трасса);
+        road_width — ширина полотна в пикселях (None = стандартная);
+        figure8    — True = трасса-«восьмёрка» с перекрёстком (waypoints
+                     игнорируются, центр строится кривой Лиссажу).
+
+        При создании сразу: строится плавная центральная линия, рисуется
+        картинка трассы, готовится маска дороги (для быстрых проверок
+        «на дороге ли точка») и расставляются 24 чекпоинта.
+        """
         self._figure8   = figure8
         self.road_width = road_width if road_width is not None else ROAD_WIDTH
 
@@ -316,6 +327,8 @@ class Track:
         return left, right
 
     def _draw_to_surface(self):
+        """Рисует всю трассу один раз в self.surface (потом только blit'ится):
+        трава -> грунтовая обочина -> асфальт -> поребрики -> разметка -> старт."""
         self.surface.fill(COLOR_GRASS)
         hw = int(self.road_width / 2)
 
@@ -439,6 +452,8 @@ class Track:
     # ------------------------------------------------------------------
 
     def draw(self, screen: pygame.Surface, cam_x: float = 0, cam_y: float = 0):
+        """Рисует трассу и кружки чекпоинтов (красный = старт, голубые — остальные).
+        Чекпоинты за пределами экрана не рисуются (culling)."""
         screen.blit(self.surface, (-int(cam_x), -int(cam_y)))
         for i, (cx, cy, _) in enumerate(self.checkpoints):
             sx, sy = int(cx - cam_x), int(cy - cam_y)
@@ -448,6 +463,8 @@ class Track:
 
     def draw_with_active_checkpoint(self, screen: pygame.Surface, active_idx: int,
                                     cam_x: float = 0, cam_y: float = 0):
+        """То же, что draw(), но текущий целевой чекпоинт выделен жёлтым
+        и крупнее — видно, куда агент должен ехать."""
         screen.blit(self.surface, (-int(cam_x), -int(cam_y)))
         n = len(self.checkpoints)
         for i, (cx, cy, _) in enumerate(self.checkpoints):
@@ -462,6 +479,13 @@ class Track:
                 pygame.draw.circle(screen, color, (sx, sy), r, 2)
 
     def is_on_road(self, x: float, y: float, margin: int = 0) -> bool:
+        """Находится ли точка (x, y) на дороге.
+
+        Основная проверка — один взгляд в заранее построенную маску (O(1)).
+        margin > 0 добавляет допуск: точка считается «на дороге», если
+        дорога есть в круге радиуса margin вокруг неё (нужно, чтобы
+        белая линия разметки на краю не давала ложный вылет).
+        """
         ix, iy = int(x), int(y)
         if ix < 0 or ix >= WORLD_WIDTH or iy < 0 or iy >= WORLD_HEIGHT:
             return False
@@ -498,6 +522,7 @@ class Track:
         return sx, sy, angle
 
     def get_checkpoints(self):
+        """Список чекпоинтов [(x, y, угол трассы в градусах), ...]."""
         return self.checkpoints
 
     def get_direction_at(self, x: float, y: float) -> float:

@@ -27,6 +27,7 @@ PLAYER_CHOICES = ["human", "ai", "bot"]
 
 
 def load_model():
+    """Загружает обученную PPO-модель; если её нет — понятная ошибка и выход."""
     from stable_baselines3 import PPO
     model_file = MODEL_PATH + ".zip"
     if not os.path.exists(model_file):
@@ -37,6 +38,8 @@ def load_model():
 
 
 def format_result(info: dict, terminated: bool, truncated: bool, human: bool = False) -> str:
+    """Итог эпизода в читаемую строку (по-русски для человека,
+    короткие коды для матчей ботов)."""
     result = info.get("result", "")
     if result == "win":
         return "ПОБЕДА!" if human else "WIN"
@@ -55,9 +58,13 @@ def format_result(info: dict, terminated: bool, truncated: bool, human: bool = F
 
 
 def run(p1: str, p2: str):
-    """
-    p1 — кто управляет синим:   'human' | 'ai'
-    p2 — кто управляет красным: 'bot'   | 'ai'
+    """Главный цикл матча (60 FPS, бесконечные эпизоды до Esc).
+
+    p1 — кто управляет синим:   'human' (клавиатура) | 'ai' (RL-модель);
+    p2 — кто управляет красным: 'bot' (скрипт) | 'ai' (RL-модель).
+
+    Красным управляет сама среда (через SelfPlayBot), поэтому для
+    p2 == 'ai' достаточно подложить модель в env.update_bot_model().
     """
     need_model = (p1 == "ai") or (p2 == "ai")
     model = load_model() if need_model else None

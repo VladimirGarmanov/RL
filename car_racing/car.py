@@ -98,6 +98,7 @@ class Car:
 
     @property
     def total_speed(self) -> float:
+        """Полная скорость (модуль вектора), независимо от направления кузова."""
         return math.hypot(self.vx, self.vy)
 
     # ------------------------------------------------------------------
@@ -105,6 +106,8 @@ class Car:
     # ------------------------------------------------------------------
 
     def reset(self, x: float, y: float, angle: float = 0.0):
+        """Телепортирует машинку в точку старта и обнуляет скорость
+        (вызывается в начале каждого эпизода)."""
         self.x, self.y, self.angle = x, y, angle
         self.vx = self.vy = 0.0
         self._ray_endpoints = []
@@ -267,11 +270,16 @@ class Car:
 
     def draw(self, screen: pygame.Surface, draw_rays: bool = False,
              cam_x: float = 0, cam_y: float = 0):
+        """Рисует машинку (и опционально лучи сенсоров).
+        cam_x/cam_y — смещение камеры: мировые координаты минус эти
+        значения дают экранные."""
         if draw_rays:
             self._draw_rays(screen, cam_x, cam_y)
         self._draw_car(screen, cam_x, cam_y)
 
     def _draw_rays(self, screen, cam_x: float = 0, cam_y: float = 0):
+        """Рисует лучи-сенсоры: жёлтые линии до точки касания границы дороги,
+        красные точки — сами точки касания (для отладки «что видит агент»)."""
         ox, oy = int(self.x - cam_x), int(self.y - cam_y)
         for hx, hy in self._ray_endpoints:
             pygame.draw.line(screen, (255, 255, 100),
@@ -281,6 +289,11 @@ class Car:
                                (int(hx - cam_x), int(hy - cam_y)), 3)
 
     def _draw_car(self, screen, cam_x: float = 0, cam_y: float = 0):
+        """Рисует кузов, лобовое стекло и центр машинки.
+
+        Цвет кузова кодирует занос: при боковой скорости > 1.2 корпус
+        плавно синеет — визуальная индикация скольжения.
+        """
         corners = self.get_corners()
         ipts = [(int(x - cam_x), int(y - cam_y)) for x, y in corners]
 

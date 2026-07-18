@@ -18,11 +18,13 @@ FLANK_ARC     = 18
 
 
 def _angle_diff(a: float, b: float) -> float:
+    """Кратчайшая разница углов a-b со знаком, градусы, диапазон [-180, 180]."""
     return (a - b + 180.0) % 360.0 - 180.0
 
 
 def _line_clear(world, x1: float, y1: float, x2: float, y2: float,
                 step: float = 6.0) -> bool:
+    """Свободна ли прямая между точками от стен (шагаем по step пикселей)."""
     dist = math.hypot(x2 - x1, y2 - y1)
     if dist <= 1e-6:
         return True
@@ -37,11 +39,20 @@ def _line_clear(world, x1: float, y1: float, x2: float, y2: float,
 
 
 def _front_clear(actor, world, dist: float = 2.4 * RADIUS) -> bool:
+    """Свободно ли прямо перед носом (чтобы не жать MOVE в стену)."""
     rad = math.radians(actor.angle)
     return world.raycast(actor.x, actor.y, rad, max_dist=dist, step=4.0) >= dist
 
 
 def _lead_angle(shooter, target) -> float:
+    """Угол выстрела с упреждением: куда целиться, чтобы пуля встретила
+    движущуюся цель.
+
+    Решаем квадратное уравнение относительно времени встречи t
+    (пуля летит с BULLET_SPEED, цель — со своей скоростью), берём
+    наименьший положительный корень; если корней нет — целимся в
+    текущую позицию. Возвращает угол в градусах [0, 360).
+    """
     rx = target.x - shooter.x
     ry = target.y - shooter.y
     vx = target.vx
@@ -78,9 +89,21 @@ def _lead_angle(shooter, target) -> float:
 
 
 class BotController:
-    """Скриптовый бот: агрессивно ищет line-of-sight и стреляет с упреждением."""
+    """Скриптовый бот: агрессивно ищет line-of-sight и стреляет с упреждением.
+
+    Никакого обучения — чистая геометрия. Служит противником на старте
+    self-play (пока RL-модель агента ещё слаба) и запасным вариантом.
+    """
 
     def get_action(self, bot, target, world, bot_obs=None) -> int:
+        """Выбирает действие бота (0/1/2) по простым правилам.
+
+        Если линия огня открыта: пушка довернулась до угла упреждения и
+        перезарядка готова — стрелять; смотрит на цель и цель далеко —
+        сближаться; иначе ждать доворота (пушка крутится сама).
+        Если линия перекрыта: не стрелять в стену, а двигаться вбок
+        (фланговый манёвр), чтобы открыть прострел.
+        """
         dx   = target.x - bot.x
         dy   = target.y - bot.y
         dist = math.hypot(dx, dy)
@@ -133,6 +156,10 @@ class SelfPlayBot:
             self._model = PPO.load(tmp_path)  # грузит из bot_snap.zip в память
 
     def get_action(self, bot, target, world, bot_obs=None) -> int:
+        """Действие бота: RL-модель, если она уже подложена (и есть её
+        наблюдение), иначе скриптовый BotController.
+        deterministic=False — бот слегка случайный, чтобы агенту не
+        достался идеально предсказуемый противник."""
         if self._model is None or bot_obs is None:
             return self._fallback.get_action(bot, target, world)
         action, _ = self._model.predict(bot_obs, deterministic=False)

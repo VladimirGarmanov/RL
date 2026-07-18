@@ -36,6 +36,10 @@ EXPLORATION_ENT_COEF = 0.05
 N_ENVS               = 8           # параллельных сред (подбери под кол-во ядер CPU)
 
 
+# Гиперпараметры PPO. PPO (Proximal Policy Optimization) — стандартный
+# алгоритм RL: усиливает удачные действия, но ограничивает размер
+# обновления политики (clip_range), чтобы одно плохое обновление не
+# разрушило выученное поведение.
 PPO_PARAMS = {
     "n_steps":       2048,
     "batch_size":    512,   # больше батч → GPU загружен
@@ -75,6 +79,8 @@ class SelfPlayCallback(BaseCallback):
 
 
 class ProgressCallback(BaseCallback):
+    """Печатает среднюю награду последних эпизодов каждые PRINT_FREQ шагов."""
+
     PRINT_FREQ = 20_000
 
     def __init__(self):
@@ -92,6 +98,13 @@ class ProgressCallback(BaseCallback):
 
 
 def make_env(rank: int):
+    """Фабрика для SubprocVecEnv: возвращает функцию, создающую среду.
+
+    Каждому параллельному процессу — свой seed (rank), чтобы среды
+    не проигрывали одинаковые бои. Двухслойная конструкция (функция,
+    возвращающая функцию) нужна SubprocVecEnv: он вызывает _init уже
+    внутри дочернего процесса.
+    """
     def _init():
         env = ShooterEnv(render_mode=None)
         env.reset(seed=rank)
@@ -100,6 +113,7 @@ def make_env(rank: int):
 
 
 def main():
+    """Полный цикл self-play обучения: среды -> модель -> learn -> сохранение."""
     os.makedirs(os.path.join(_HERE, "models"), exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"

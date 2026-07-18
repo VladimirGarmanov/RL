@@ -10,6 +10,9 @@ TARGET_RADIUS = 18
 
 
 class Target:
+    """Неподвижная мишень (использовалась в ранних версиях среды для
+    обучения чистой стрельбе; в текущем self-play бою не участвует)."""
+
     def __init__(self, x: float, y: float):
         self.x     = x
         self.y     = y
@@ -17,6 +20,8 @@ class Target:
         self._tick = 0     # для анимации пульса
 
     def draw(self, screen: pygame.Surface, cam_x: float = 0, cam_y: float = 0):
+        """Рисует мишень: концентрические кольца с плавной пульсацией
+        (синус по счётчику кадров) + прицельные линии."""
         if not self.alive:
             return
 

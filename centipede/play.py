@@ -59,6 +59,7 @@ from centipede_env import (
     MAX_VX_FORWARD,
     MAX_VX_BACKWARD,
     MAX_WZ,
+    GAIT_PHASE_LAG,
     REWARD_VERSION,
 )
 
@@ -293,7 +294,7 @@ def manual_cpg_action(n_segments, phase, cmd_vx, cmd_wz):
             action.append(spine)
 
         for side in (+1, -1):
-            leg_phase = phase + i * 0.85 + (0.0 if side > 0 else np.pi)
+            leg_phase = phase + i * GAIT_PHASE_LAG + (0.0 if side > 0 else np.pi)
             swing = np.sin(leg_phase)
             lift = max(0.0, swing)
 
@@ -363,20 +364,21 @@ def default_segments():
 
 
 def warn_if_stale(meta, what):
-    """Предупреждает, если модель обучена другой версией среды: она видела
-    другую физику/наблюдения и в текущей среде будет спотыкаться и падать."""
+    """Возвращает False для несовместимой модели и печатает причину отказа."""
     if meta.get("reward_version") != REWARD_VERSION:
-        print(f"ВНИМАНИЕ: {what} обучена старой версией среды "
+        print(f"ОШИБКА: {what} обучена старой версией среды "
               f"(meta reward_version={meta.get('reward_version')}, нужна {REWARD_VERSION}) — "
-              f"поведение будет неадекватным, переобучите: python train.py")
+              f"размер/смысл наблюдений несовместим. Переобучите: python train.py")
+        return False
+    return True
 
 
 def make_view_env(n_segments, max_episode_steps=1_000_000, reward_mode="command"):
     """Среда для просмотра: offscreen-рендер нужного размера, команды задаём сами.
 
     reward_mode обязан совпадать с режимом обучения модели: в режиме forward
-    среда обнуляет эффективную команду поворота в наблюдениях, и командная
-    модель никогда не увидит нажатую стрелку. Пол — ровный (как «на столе»);
+    эффективная команда поворота всегда нулевая, поэтому статистика наблюдений
+    командной модели будет другой. Пол — ровный (как «на столе»);
     в обучении бугры дают только устойчивость, показывать их незачем.
     """
     return make_centipede_env(
@@ -743,7 +745,8 @@ def main():
         return
 
     meta = generalist_meta()
-    warn_if_stale(meta, "универсальная модель")
+    if not warn_if_stale(meta, "универсальная модель"):
+        return
     reward_mode = meta.get("reward_mode") or "command"
 
     print(f"Модель:       {model_path}")

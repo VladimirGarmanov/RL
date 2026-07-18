@@ -75,7 +75,16 @@ MAPS = [_parse_rows(_COMBAT_MAP)]
 
 
 class World:
+    """Тайловая карта арены: сетка WORLD_H x WORLD_W клеток по TILE пикселей.
+
+    Каждая клетка — либо пусто (EMPTY), либо камень (ROCK). Все проверки
+    столкновений сводятся к вопросу «какой тайл в этой точке?» — это
+    дёшево и достаточно для аркадной физики.
+    """
+
     def __init__(self, map_idx: int = 0):
+        """Загружает карту и обводит её сплошной каменной рамкой по периметру
+        (чтобы никто не выехал и не выстрелил за пределы мира)."""
         self.grid = MAPS[map_idx % len(MAPS)].copy()
         self.grid[0, :]  = ROCK
         self.grid[-1, :] = ROCK
@@ -85,6 +94,9 @@ class World:
         self._surface = None   # создаётся лениво при первом draw()
 
     def _bake(self):
+        """Отрисовывает карту один раз в закешированную поверхность:
+        шахматная трава, сетка, камни с псевдо-3D фасками. Дальше draw()
+        просто копирует готовую картинку — быстро."""
         for r in range(WORLD_H):
             for c in range(WORLD_W):
                 x, y = c * TILE, r * TILE
@@ -116,12 +128,15 @@ class World:
                                      (x+6, y+5), (x+TILE-8, y+TILE-7), 1)
 
     def draw(self, screen: pygame.Surface, cam_x: float = 0, cam_y: float = 0):
+        """Рисует карту (лениво запекая её при первом вызове)."""
         if self._surface is None:
             self._surface = pygame.Surface((PX_W, PX_H))
             self._bake()
         screen.blit(self._surface, (-int(cam_x), -int(cam_y)))
 
     def tile_at(self, px: float, py: float) -> int:
+        """Тип тайла в пиксельной точке (px, py).
+        За пределами карты — ROCK (мир как будто окружён камнем)."""
         c = int(px // TILE)
         r = int(py // TILE)
         if 0 <= r < WORLD_H and 0 <= c < WORLD_W:
@@ -129,9 +144,12 @@ class World:
         return ROCK
 
     def is_solid(self, px: float, py: float) -> bool:
+        """Есть ли стена в этой точке (для пуль, лучей, линии огня)."""
         return self.tile_at(px, py) == ROCK
 
     def circle_collides(self, px: float, py: float, radius: float) -> bool:
+        """Задевает ли круг (игрок) стену: проверяем 9 точек — центр,
+        4 стороны и 4 диагонали на расстоянии radius."""
         for dx in (-radius, 0, radius):
             for dy in (-radius, 0, radius):
                 if self.is_solid(px + dx, py + dy):
@@ -139,6 +157,14 @@ class World:
         return False
 
     def slide_resolve(self, x, y, vx, vy, radius):
+        """Движение со «скольжением» вдоль стен.
+
+        Оси проверяются независимо: если движение по X упирается в стену —
+        гасится только X-компонента, Y продолжает работать (и наоборот).
+        Так игрок не «липнет» к стене, а скользит вдоль неё.
+
+        Возвращает (новый x, новый y, новый vx, новый vy, был ли контакт).
+        """
         nx, ny = x + vx, y + vy
         hit = False
         if self.circle_collides(nx, y, radius):
@@ -152,6 +178,9 @@ class World:
         return nx, ny, vx, vy, hit
 
     def raycast(self, ox, oy, angle, max_dist=400.0, step=4.0):
+        """Луч-дальномер: идёт из точки (ox, oy) под углом angle шагами
+        по step пикселей и возвращает расстояние до первой стены
+        (или max_dist, если стены не встретилось). Основа сенсоров игрока."""
         dx, dy = math.cos(angle), math.sin(angle)
         dist = 0.0
         while dist < max_dist:
